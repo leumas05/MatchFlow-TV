@@ -12,6 +12,9 @@ public sealed class ServiceScanResult
     public ServiceAuthState AuthState { get; init; }
     public string PageTitle { get; init; } = string.Empty;
     public string Url { get; init; } = string.Empty;
+    public string ExtractorUsed { get; init; } = string.Empty;
+    public int LinksInspected { get; init; }
+    public string PageSnippet { get; init; } = string.Empty;
     public List<SportEvent> Events { get; init; } = [];
 }
 
@@ -26,6 +29,9 @@ public static class ScanResultParser
         public string? url { get; set; }
         public string? pageTitle { get; set; }
         public string? authState { get; set; }
+        public string? extractorUsed { get; set; }
+        public int linksInspected { get; set; }
+        public string? pageSnippet { get; set; }
         public List<RawEventPayload>? events { get; set; }
     }
 
@@ -131,7 +137,10 @@ public static class ScanResultParser
             ServiceId = serviceId,
             AuthState = authState,
             PageTitle = payload.pageTitle ?? string.Empty,
-            Url = payload.url ?? string.Empty,
+            Url = UrlSecurityGuard.SanitizeForDisplay(payload.url),
+            ExtractorUsed = payload.extractorUsed ?? string.Empty,
+            LinksInspected = payload.linksInspected,
+            PageSnippet = payload.pageSnippet ?? string.Empty,
             Events = events
         };
     }

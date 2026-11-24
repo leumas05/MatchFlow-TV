@@ -80,6 +80,7 @@ public partial class TvOverlayWindow : Window
     public event Action<string>? SelectEventRequested;
     public event Action? ScanAllRequested;
     public event Action<StreamingServiceId>? ScanSingleServiceRequested;
+    public event Action<StreamingServiceId?>? OpenVisualScannerRequested;
     public event Action<StreamingServiceId>? OpenServiceLoginRequested;
     public event Action<StreamingServiceId>? ClearServiceSessionRequested;
     public event Action<StreamingServiceId, int>? ServiceVolumeChanged;
@@ -207,14 +208,66 @@ public partial class TvOverlayWindow : Window
 
     public void ShowDiagnosticEvents(ServiceConfig service, ServiceScanResult result)
     {
-        ServiceDiagnosticTitle.Text = $"{service.DisplayName} — {result.Events.Count} träffar ({result.AuthState})";
+        var liveCount = result.Events.Count(e => e.Status == EventStatus.Live);
+        var upcomingCount = result.Events.Count(e => e.Status == EventStatus.Upcoming);
+        ServiceDiagnosticTitle.Text = $"{service.DisplayName} — {liveCount} live, {upcomingCount} kommande ({FormatAuthState(result.AuthState)})";
         ServiceDiagnosticList.Children.Clear();
+
+        var summaryCard = new Border
+        {
+            Background = new SolidColorBrush(Color.FromRgb(15, 23, 42)),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(56, 189, 248)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(12),
+            Margin = new Thickness(0, 0, 0, 10)
+        };
+        var summaryStack = new StackPanel();
+        var displayUrl = !string.IsNullOrWhiteSpace(result.Url) ? result.Url : UrlSecurityGuard.SanitizeForDisplay(service.ResolveSportsHubUrl());
+        var extractor = string.IsNullOrWhiteSpace(result.ExtractorUsed) ? "Standard" : result.ExtractorUsed;
+        summaryStack.Children.Add(new TextBlock
+        {
+            Text = $"URL: {displayUrl}\nSidtitel: {result.PageTitle}\nExtraktor: {extractor} • Länkar på sidan: {result.LinksInspected}",
+            Foreground = new SolidColorBrush(Color.FromRgb(203, 213, 225)),
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap
+        });
+
+        if (!string.IsNullOrWhiteSpace(result.PageSnippet) && (result.Events.Count == 0 || result.AuthState is not (ServiceAuthState.Authenticated or ServiceAuthState.NotRequired)))
+        {
+            summaryStack.Children.Add(new TextBlock
+            {
+                Text = $"Sidtext: \"{result.PageSnippet}\"",
+                Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 6, 0, 0)
+            });
+        }
+
+        var openVisualBtn = new Button
+        {
+            Content = $"👁 Öppna {service.DisplayName} i visuell skanner",
+            Style = (Style)FindResource("TvAccentButtonStyle"),
+            Padding = new Thickness(10, 5, 10, 5),
+            FontSize = 12,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(0, 8, 0, 0)
+        };
+        openVisualBtn.Click += (_, _) =>
+        {
+            CloseAllPanels();
+            OpenVisualScannerRequested?.Invoke(service.ServiceId);
+        };
+        summaryStack.Children.Add(openVisualBtn);
+        summaryCard.Child = summaryStack;
+        ServiceDiagnosticList.Children.Add(summaryCard);
 
         if (result.Events.Count == 0)
         {
             ServiceDiagnosticList.Children.Add(new TextBlock
             {
-                Text = $"Inga direktsända eller kommande matcher hittades på {service.SportsHubUrl}.\nStatus: {result.AuthState}\nSidtitel: {result.PageTitle}",
+                Text = "Inga direktsända eller kommande matcher hittades vid denna skanning. Klicka på 'Öppna i visuell skanner' ovan för att se exakt vad webbsidan visar (t.ex. profilväljare, cookie-ruta eller inloggning).",
                 Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
                 TextWrapping = TextWrapping.Wrap,
                 FontSize = 13
@@ -849,6 +902,22 @@ public partial class TvOverlayWindow : Window
             scanBtn.Click += (_, _) => ScanSingleServiceRequested?.Invoke(service.ServiceId);
             actions.Children.Add(scanBtn);
 
+            var visualScanBtn = new Button
+            {
+                Content = "👁 Se live",
+                Style = (Style)FindResource("TvButtonStyle"),
+                Padding = new Thickness(10, 6, 10, 6),
+                FontSize = 13,
+                Margin = new Thickness(0, 0, 8, 0),
+                ToolTip = "Öppna visuell skanner och se exakt vad appen skannar"
+            };
+            visualScanBtn.Click += (_, _) =>
+            {
+                CloseAllPanels();
+                OpenVisualScannerRequested?.Invoke(service.ServiceId);
+            };
+            actions.Children.Add(visualScanBtn);
+
             var clearBtn = new Button
             {
                 Content = "Rensa session",
@@ -1089,6 +1158,11 @@ public partial class TvOverlayWindow : Window
                 ShowSection(_activeSection == OverlaySection.Services ? OverlaySection.None : OverlaySection.Services, _editingRanking);
                 e.Handled = true;
                 break;
+            case Key.V:
+                CloseAllPanels();
+                OpenVisualScannerRequested?.Invoke(null);
+                e.Handled = true;
+                break;
             case Key.F1 or Key.H:
                 ShowSection(_activeSection == OverlaySection.Help ? OverlaySection.None : OverlaySection.Help, _editingRanking);
                 e.Handled = true;
@@ -1138,6 +1212,7 @@ public partial class TvOverlayWindow : Window
     private void OpenGuide_Click(object sender, RoutedEventArgs e) => ShowSection(OverlaySection.Guide, _editingRanking);
     private void OpenRanking_Click(object sender, RoutedEventArgs e) => ShowSection(OverlaySection.Ranking, _editingRanking);
     private void OpenServices_Click(object sender, RoutedEventArgs e) => ShowSection(OverlaySection.Services, _editingRanking);
+    private void OpenVisualScanner_Click(object sender, RoutedEventArgs e) { CloseAllPanels(); OpenVisualScannerRequested?.Invoke(null); }
     private void OpenHelp_Click(object sender, RoutedEventArgs e) => ShowSection(OverlaySection.Help, _editingRanking);
     private void ToggleFullscreen_Click(object sender, RoutedEventArgs e) => ToggleFullscreenRequested?.Invoke();
     private void CloseModals_Click(object sender, RoutedEventArgs e) => CloseAllPanels();

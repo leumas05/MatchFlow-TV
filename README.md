@@ -53,6 +53,7 @@
 - **OLED-säker TV-skärmsläckare (`Z`):** Aktiveras automatiskt när ingen livesport pågår, med mjukt rörlig klocka och kommande match – vaknar direkt till fullskärm så fort nästa match startar.
 - **Nattläge ("Tysta timmar"):** Stoppar automatisk uppspelning nattetid (t.ex. `23:30–07:00`) samtidigt som du fortfarande kan välja matcher manuellt i guiden.
 - **Volym per tjänst & autostart:** Balansera ljudnivån mellan t.ex. SVT Play, Viaplay och Expressen, snabbdämpa med `M` och välj autostart med Windows.
+- **Visuell live-skanner (`V`):** Se i realtid exakt vilken webbsida skannern laddar för varje tjänst (SVT Play, TV4 Play, Viaplay, Disney+, Expressen m.fl.), byt tjänst med ett klick och se extraktor, URL och sidstatus direkt på skärmen.
 - **Automatiska uppdateringar från GitHub:** Appen kollar automatiskt efter nya GitHub-releaser, verifierar `SHA256SUMS.txt` kryptografiskt och uppdaterar `MatchFlowTV.exe` i bakgrunden när ingen match spelas – med alla dina inloggningar och rangordningar helt orörda.
 
 ---
@@ -64,6 +65,7 @@
 | **`G` / `Tab`** | Öppna Sportguiden (bläddra med **`Upp`/`Ner`**, välj med **`Enter`**) |
 | **`R`** | Rangordning, Nattläge, Skärmsläckare, Dubblettfilter & Autostart |
 | **`L`** | Tjänster, inloggning, volym per tjänst, rensa session & skannerdiagnostik |
+| **`V`** | Öppna/stäng visuell live-skanner (se exakt vad appen skannar i realtid) |
 | **`N` / `PageUp`** | Nästa högst rankade match |
 | **`B` / `PageDown`** | Föregående match |
 | **`S`** | Hoppa över denna match resten av sessionen |

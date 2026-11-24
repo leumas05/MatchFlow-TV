@@ -23,37 +23,46 @@ public static class SiteAdapters
     url: location.origin + location.pathname,
     pageTitle: document.title || "",
     authState: "unknown",
+    extractorUsed: "",
+    linksInspected: document.querySelectorAll('a[href]').length,
+    pageSnippet: "",
     events: []
   };
 
   const bodyText = (document.body?.innerText || "").slice(0, 8000);
   const lowerUrl = location.href.toLowerCase();
+  result.pageSnippet = bodyText
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[redacted]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 260);
 
   // Detect auth / profile / rate-limit gate cleanly without interacting with credentials or challenges
   const hasPasswordField = !!document.querySelector('input[type="password"]');
-  const loginUrlHit = /\/login|\/signin|\/logga-in|\/auth|accounts\.|sign-in/.test(lowerUrl);
+  const loginUrlHit = /\/login|\/signin|\/logga-in|\/auth|accounts\.|sign-in|identity\/login/.test(lowerUrl);
   const challengeHit =
     /verify you are human|too many requests|access denied|checking your browser|captcha|rate limit/i.test(bodyText) ||
     !!document.querySelector('iframe[src*="captcha" i], iframe[src*="turnstile" i]');
   const profilePickerHit =
-    /who's watching|vem tittar|välj profil|choose profile|select profile/i.test(bodyText) &&
-    document.querySelectorAll('[data-uia*="profile"], [class*="profile-icon"], [data-testid*="profile"]').length > 0;
+    /select-profile|who's watching|vem tittar|välj profil|choose profile|select profile/i.test(lowerUrl + " " + bodyText) &&
+    document.querySelectorAll('[data-uia*="profile"], [class*="profile-icon"], [data-testid*="profile"], [data-gv2elementkey*="profile"]').length > 0;
 
   if (challengeHit) {
     result.authState = "rate_limited_or_challenge";
     return JSON.stringify(result);
   } else if (profilePickerHit) {
     result.authState = "profile_picker";
-  } else if (hasPasswordField || (loginUrlHit && !document.querySelector('a[href*="/sport"], a[href*="/video"]'))) {
+  } else if (hasPasswordField || (loginUrlHit && !document.querySelector('a[href*="/sport"], a[href*="/video"], a[href*="/entity-"]'))) {
     result.authState = "login_required";
   } else if (SERVICE === "SvtPlay") {
     result.authState = "not_required";
   } else {
     const signInCta = Array.from(document.querySelectorAll('a, button')).some(el => {
       const txt = (el.innerText || "").trim().toLowerCase();
-      return /^(logga in|sign in|log in)$/.test(txt);
+      return /^(logga in|sign in|log in|skaffa disney\+)$/.test(txt);
     });
-    result.authState = signInCta && !document.querySelector('[aria-label*="profil" i], [data-testid*="avatar" i], [data-uia*="account" i]')
+    const hasLoggedInCue = !!document.querySelector('[aria-label*="profil" i], [data-testid*="avatar" i], [data-testid*="profile-avatar" i], [data-uia*="account" i], [data-testid="nav-profile"]');
+    result.authState = signInCta && !hasLoggedInCue
       ? "login_required"
       : "authenticated";
   }
@@ -250,7 +259,7 @@ public static class SiteAdapters
     return found > 0;
   };
 
-  // 3. Disney+ Sport Hub (/sv-se/browse/page-1eaf1f02-deb4-48d0-b54f-cbf7a843e8f3) — stitchDocument "Live och kommande" + DOM
+  // 3. Disney+ Sport Hub (/sv-se/browse/page-1eaf1f02-deb4-48d0-b54f-cbf7a843e8f3) — stitchDocument + Authenticated SPA DOM
   const scanDisneyPlus = () => {
     let found = 0;
     const extractText = (node) => {
@@ -261,6 +270,32 @@ public static class SiteAdapters
       return "";
     };
 
+    const pad2 = (n) => String(n).padStart(2, "0");
+    const formatDateOffset = (daysOffset) => {
+      const d = new Date();
+      d.setDate(d.getDate() + daysOffset);
+      return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+    };
+
+    const nonLiveShelfRegex = /repris|dokumentär|berättelser|serier|filmer|feel-good|highlights|höjdpunkter|replay|movies|series|originals|extras|klipp|sammandrag|arkiv|recap/i;
+    const liveShelfRegex = /live och kommande|live & upcoming|live nu|live now|live-sport|live på|pågår|kommande|live-evenemang|live events|direkt|sport|espn|uefa|europa league|conference league|champions league|laliga|nhl/i;
+    const disneyFutureOnlyRegex = /\b(kommer|kommande|upcoming|imorgon|i morgon|börjar om|startar om|nästa vecka)\b/i;
+    const disneyUpcomingTimeRegex = /\b(kommer|kommande|upcoming|idag|i dag|imorgon|i morgon|mån|tis|ons|tor|fre|lör|sön|\d{1,2}[:.]\d{2})\b/i;
+    const disneyLiveBadgeRegex = /\b(live nu|live now|direkt|pågår|sänds nu)\b|(^|[\s•|,\-–])live($|[\s•|,\-–])/i;
+
+    const stripShelfPhrase = (str) =>
+      String(str || "").replace(/live\s+(och|&)\s+(kommande|upcoming)|live[- ]?evenemang|live[- ]?sport/gi, " ");
+
+    const parseStartIso = (str) => {
+      const timeMatch = String(str || "").match(/\b(\d{1,2})[:.](\d{2})\b/);
+      if (!timeMatch) return "";
+      const hh = pad2(Number(timeMatch[1]));
+      const mm = timeMatch[2];
+      const datePart = /\b(imorgon|i morgon)\b/i.test(str) ? formatDateOffset(1) : formatDateOffset(0);
+      return `${datePart}T${hh}:${mm}:00`;
+    };
+
+    // Pass A: Public / Next.js SSR stitchDocument ("Live och kommande" slider)
     try {
       const nextEl = document.getElementById("__NEXT_DATA__");
       if (nextEl?.textContent) {
@@ -274,19 +309,20 @@ public static class SiteAdapters
           }
           if (node._type === "Slider") {
             const sliderTitle = extractText(node.title).trim();
-            const isLiveOrUpcomingSlider = /live|kommande|upcoming|pågår/i.test(sliderTitle) &&
-                                           !/repris|dokumentär|berättelser|serier|filmer|feel-good/i.test(sliderTitle);
+            const isLiveOrUpcomingSlider = /live|kommande|upcoming|pågår/i.test(sliderTitle) && !nonLiveShelfRegex.test(sliderTitle);
             if (isLiveOrUpcomingSlider) {
               const walkCards = (c, d2) => {
                 if (!c || typeof c !== "object" || d2 > 6) return;
                 if (Array.isArray(c)) { for (const x of c) walkCards(x, d2 + 1); return; }
                 if (c._type === "ImageCard" && c.title && c.url) {
                   const badge = extractText(c.badgeText).trim();
-                  const isLive = /^(live|direkt|pågår|live now|sänds nu)\b/i.test(badge);
+                  const cleanBadge = stripShelfPhrase(badge);
+                  const isLive = disneyLiveBadgeRegex.test(cleanBadge) && !disneyFutureOnlyRegex.test(cleanBadge);
                   addEvent({
                     title: c.title,
                     subtitle: [badge, sliderTitle].filter(Boolean).join(" • "),
                     status: isLive ? "Live" : "Upcoming",
+                    startTimeIso: isLive ? "" : parseStartIso(badge),
                     watchUrl: c.url
                   });
                   found++;
@@ -301,36 +337,146 @@ public static class SiteAdapters
           for (const v of Object.values(node)) walkSliders(v, depth + 1);
         };
         walkSliders(stitch, 0);
+        if (found > 0) result.extractorUsed = "DisneyPlus:stitchDocument";
       }
     } catch {}
 
-    // Live authenticated DOM fallback for Disney+ SPA ("Live och kommande" / "Live & Upcoming" shelf)
+    // Pass B: Authenticated Disney+ Web SPA DOM (both <a href> and non-anchor React tiles + Hero banners)
     if (found === 0) {
-      const headings = Array.from(document.querySelectorAll('h2, h3, [role="heading"]'));
+      const cardSelector = [
+        'a[href*="/entity-"]',
+        'a[href*="/browse/entity-"]',
+        'a[href*="/video/"]',
+        'a[href*="/play/"]',
+        '[data-testid="set-item"]',
+        '[data-testid*="content-tile" i]',
+        '[data-testid*="collection-tile" i]',
+        '[data-gv2elementkey*="tile" i]',
+        '[data-gv2elementkey*="card" i]'
+      ].join(", ");
+
+      const resolveDisneyUrl = (el) => {
+        const anchor = el.matches?.('a[href]') ? el : (el.querySelector?.('a[href]') || el.closest?.('a[href]'));
+        const href = anchor?.getAttribute("href") || "";
+        if (href && !/\/browse\/page-/.test(href)) return href;
+
+        const directId =
+          el.getAttribute?.("data-entity-id") ||
+          el.getAttribute?.("data-item-id") ||
+          el.getAttribute?.("data-content-id") ||
+          "";
+        if (directId) {
+          const cleanId = directId.replace(/^entity-/, "");
+          return `/sv-se/browse/entity-${cleanId}`;
+        }
+
+        const gv2 = el.getAttribute?.("data-gv2interactiondata") || el.querySelector?.("[data-gv2interactiondata]")?.getAttribute("data-gv2interactiondata") || "";
+        const entityMatch = gv2.match(/entity-[0-9a-f-]{8,}/i);
+        if (entityMatch) return `/sv-se/browse/${entityMatch[0]}`;
+
+        return href && !/\/browse\/page-/.test(href) ? href : "";
+      };
+
+      const parseDisneyCard = (el, shelfTitle, requireLiveOrUpcomingSignal) => {
+        const card = el.closest?.('[data-testid="set-item"], [data-testid*="content-tile" i], [data-testid*="collection-tile" i], li, article') || el;
+        const href = resolveDisneyUrl(card) || resolveDisneyUrl(el);
+
+        const anchor = el.matches?.('a[href]') ? el : card.querySelector?.('a[href]');
+        const aria = (el.getAttribute?.("aria-label") || anchor?.getAttribute("aria-label") || card.getAttribute?.("aria-label") || "").trim();
+        const imgAlt = (card.querySelector?.("img")?.getAttribute("alt") || "").trim();
+        const rawText = (card.innerText || "").replace(/\s+/g, " ").trim();
+        const rawLines = (card.innerText || "").split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        const combined = `${aria} ${rawText}`;
+        const cleanedForLive = stripShelfPhrase(combined);
+
+        const hasFutureOnly = disneyFutureOnlyRegex.test(cleanedForLive);
+        const hasUpcomingCue = disneyUpcomingTimeRegex.test(combined);
+        const hasLiveDomBadge = !!card.querySelector?.('[data-testid*="live" i], [class*="live-badge" i], [class*="liveBadge" i], [aria-label*="live" i]');
+        const hasStandaloneLiveLine = rawLines.some(l => /^(●\s*)?(live|live nu|live now|direkt|pågår|sänds nu)$/i.test(l));
+        const hasLiveBadge = (hasStandaloneLiveLine || hasLiveDomBadge || disneyLiveBadgeRegex.test(cleanedForLive)) && !hasFutureOnly;
+
+        const isLiveOrUpcomingShelf = /live och kommande|live & upcoming|live nu|live now|live-sport|live på|pågår|kommande|live-evenemang|live events/i.test(shelfTitle || "");
+        if (requireLiveOrUpcomingSignal && !hasLiveBadge && !hasUpcomingCue) return false;
+        if (!hasLiveBadge && !hasUpcomingCue && !isLiveOrUpcomingShelf) return false;
+
+        // Require either a specific entity/video URL OR a real live/upcoming card with clickable role
+        const watchUrl = href || (hasLiveBadge ? (location.origin + location.pathname) : "");
+        if (!watchUrl) return false;
+
+        const titleLine = rawLines.find(l => l.length >= 3 && !/^(live|live nu|live now|kommer|kommande|upcoming|idag|i dag|imorgon|i morgon|\d{1,2}[:.]\d{2}|ny|nytt|espn|sport)$/i.test(l)) || "";
+        let title = aria || imgAlt || titleLine || rawText;
+        title = title
+          .replace(/^(live now|live nu|live|kommer|kommande|upcoming)\s*[.,:\-–|•]?\s*/i, "")
+          .replace(/\s*[.,:\-–|•]?\s*(live now|live nu|live|kommer|kommande|upcoming)$/i, "")
+          .trim();
+        if (!title || title.length < 3) return false;
+
+        const startIso = hasLiveBadge ? "" : parseStartIso(combined);
+        addEvent({
+          title,
+          subtitle: [rawText !== title ? rawText.slice(0, 140) : "", shelfTitle].filter(Boolean).slice(0, 2).join(" • "),
+          status: hasLiveBadge ? "Live" : "Upcoming",
+          startTimeIso: startIso,
+          watchUrl
+        });
+        return true;
+      };
+
+      // Step B1: Check featured Hero banners at top of Disney+ Sport page (often hosts the headline LIVE game!)
+      const heroes = Array.from(document.querySelectorAll('[data-testid*="hero" i], [data-testid*="featured" i], [data-gv2elementkey*="hero" i], section:first-of-type'));
+      for (const hero of heroes.slice(0, 3)) {
+        const heroText = (hero.innerText || "").replace(/\s+/g, " ").trim();
+        if (!heroText || heroText.length > 900) continue;
+        const heroClean = stripShelfPhrase(heroText);
+        const heroIsLive = disneyLiveBadgeRegex.test(heroClean) && !disneyFutureOnlyRegex.test(heroClean);
+        const heroHasWatchLive = !!hero.querySelector('[data-testid="watch-live-button"], [data-testid="play-button"], a[href*="/play/"], a[href*="/entity-"]');
+        if (heroIsLive && heroHasWatchLive) {
+          const heroLink = hero.querySelector('a[href*="/play/"], a[href*="/video/"], a[href*="/entity-"]')?.getAttribute("href") || (location.origin + location.pathname);
+          const heroTitle =
+            (hero.querySelector('h1, h2, [data-testid*="title" i]')?.innerText || "").trim() ||
+            (hero.querySelector('img[alt]')?.getAttribute("alt") || "").trim();
+          if (heroTitle && heroTitle.length >= 3) {
+            addEvent({
+              title: heroTitle,
+              subtitle: "Live på Disney+ (Utvald)",
+              status: "Live",
+              watchUrl: heroLink
+            });
+            found++;
+          }
+        }
+      }
+
+      // Step B2: Walk sections/shelves by heading so documentaries/replays are cleanly excluded
+      const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, [role="heading"], [data-testid*="set-title" i]'));
       for (const h of headings) {
-        const hText = (h.innerText || "").trim();
-        if (!/live och kommande|live & upcoming|live now|pågår nu/i.test(hText) || /repris|dokumentär/i.test(hText)) continue;
+        const hText = (h.innerText || "").replace(/\s+/g, " ").trim();
+        if (!hText || nonLiveShelfRegex.test(hText) || !liveShelfRegex.test(hText)) continue;
+
         let container = h.parentElement;
-        for (let step = 0; step < 4 && container && container.parentElement; step++) {
-          if (container.querySelectorAll('a[href*="/entity-"], a[href*="/video/"], a[href*="/play/"]').length > 0) break;
+        for (let step = 0; step < 5 && container && container.parentElement; step++) {
+          if (container.querySelectorAll(cardSelector).length > 0) break;
           container = container.parentElement;
         }
         if (!container) continue;
-        const links = Array.from(container.querySelectorAll('a[href*="/entity-"], a[href*="/video/"], a[href*="/play/"]'));
-        for (const a of links) {
-          const title = (a.getAttribute("aria-label") || a.innerText || "").replace(/\s+/g, " ").trim();
-          const cardText = (a.innerText || "").trim();
-          const isLive = /\b(live|live now|direkt|pågår)\b/i.test(cardText) && !/\bkommer\b|\bupcoming\b/i.test(cardText);
-          addEvent({
-            title,
-            subtitle: [cardText, hText].filter(Boolean).join(" • "),
-            status: isLive ? "Live" : "Upcoming",
-            watchUrl: a.getAttribute("href") || ""
-          });
-          found++;
+
+        const cards = Array.from(container.querySelectorAll(cardSelector));
+        for (const el of cards) {
+          if (parseDisneyCard(el, hText, false)) found++;
         }
       }
+
+      // Step B3: Always scan cards with explicit LIVE / Kommer signals outside documentary/replay shelves
+      const allCards = Array.from(document.querySelectorAll(cardSelector));
+      for (const el of allCards) {
+        const sectionHeading = (el.closest?.("section, [data-testid*='set' i], [role='region']")?.querySelector?.("h2, h3, [role='heading'], [data-testid*='set-title' i]")?.innerText || "").trim();
+        if (nonLiveShelfRegex.test(sectionHeading)) continue;
+        if (parseDisneyCard(el, sectionHeading, true)) found++;
+      }
+
+      if (found > 0) result.extractorUsed = "DisneyPlus:DOM";
     }
+
     return found > 0;
   };
 
@@ -510,15 +656,27 @@ public static class SiteAdapters
   };
 
   let dedicatedSucceeded = false;
-  if (SERVICE === "SvtPlay") dedicatedSucceeded = scanSvtPlay();
-  else if (SERVICE === "Viaplay") dedicatedSucceeded = scanViaplay();
-  else if (SERVICE === "DisneyPlus") dedicatedSucceeded = scanDisneyPlus();
-  else if (SERVICE === "Tv4Play") dedicatedSucceeded = scanTv4Play();
-  else if (SERVICE === "Expressen") dedicatedSucceeded = scanExpressen();
+  if (SERVICE === "SvtPlay") {
+    dedicatedSucceeded = scanSvtPlay();
+    if (dedicatedSucceeded) result.extractorUsed = "SvtPlay:URQL";
+  } else if (SERVICE === "Viaplay") {
+    dedicatedSucceeded = scanViaplay();
+    if (dedicatedSucceeded) result.extractorUsed = "Viaplay:NEXT_DATA";
+  } else if (SERVICE === "DisneyPlus") {
+    dedicatedSucceeded = scanDisneyPlus();
+  } else if (SERVICE === "Tv4Play") {
+    dedicatedSucceeded = scanTv4Play();
+    if (dedicatedSucceeded) result.extractorUsed = "Tv4Play:TablåDOM";
+  } else if (SERVICE === "Expressen") {
+    dedicatedSucceeded = scanExpressen();
+    if (dedicatedSucceeded) result.extractorUsed = "Expressen:StayLiveDOM";
+  }
 
   if (dedicatedSucceeded) {
     return JSON.stringify(result);
   }
+
+  result.extractorUsed = "GenericFallback";
 
   // Strategy 1 (Fallback for Prime Video, Netflix, HBO Max, or if site schema changes): Structured JSON-LD SportsEvent / BroadcastEvent
   try {
@@ -839,11 +997,11 @@ public static class SiteAdapters
         document.querySelector('iframe[src*="captcha" i], iframe[src*="turnstile" i]')) {
       return "rate_limited_or_challenge";
     }
-    if (/who's watching|vem tittar|välj profil|choose profile/i.test(text) &&
-        document.querySelectorAll('[data-uia*="profile"], [class*="profile" i]').length > 0) {
+    if (/select-profile|who's watching|vem tittar|välj profil|choose profile|select profile/i.test(lowerUrl + " " + text) &&
+        document.querySelectorAll('[data-uia*="profile"], [class*="profile" i], [data-testid*="profile"], [data-gv2elementkey*="profile"]').length > 0) {
       return "profile_picker";
     }
-    if (document.querySelector('input[type="password"]') || /\/login|\/signin|\/logga-in/.test(lowerUrl)) {
+    if (document.querySelector('input[type="password"]') || /\/login|\/signin|\/logga-in|identity\/login/.test(lowerUrl)) {
       return "login_required";
     }
 
@@ -900,8 +1058,11 @@ public static class SiteAdapters
 
     // Stage 2: Event detail page or "Watch Live vs Start Over" modal -> click safe Play / Watch Live CTA
     if (playAttemptedCount < 6) {
-      const safePlayRegex = /^(spela|spela upp|titta live|titta nu|se live|se direkt|starta sändning|gå till live|till sändningen|play|watch live|watch now|join live|resume|fortsätt titta|fortsätt spela)\b/i;
+      const safePlayRegex = /^(spela|spela upp|titta live|titta nu|titta|börja titta|se live|se direkt|se nu|starta sändning|gå till live|till sändningen|play|watch live|watch now|join live|resume|fortsätt titta|fortsätt spela)\b/i;
       const playSelectors = [
+        '[data-testid="play-button"]',
+        '[data-testid="watch-live-button"]',
+        '[data-gv2elementkey*="play" i]',
         '[data-automation-id*="play" i]',
         '[data-test-id*="play" i]',
         '[data-testid*="play" i]',
@@ -1050,4 +1211,107 @@ public static class SiteAdapters
 })();
 """;
     }
+
+    /// <summary>
+    /// Builds a lightweight DOM hydration probe used during scanning so slow client-side SPAs
+    /// (such as Disney+, TV4 Play, and Expressen) finish rendering tiles before extraction runs.
+    /// </summary>
+    public static string BuildHydrationProbeScript(StreamingServiceId serviceId)
+    {
+        var serviceKey = serviceId.ToString();
+        return $$"""
+(() => {
+  const SERVICE = "{{serviceKey}}";
+  const bodyText = (document.body?.innerText || "").slice(0, 4000);
+  const lowerUrl = location.href.toLowerCase();
+
+  let gate = "none";
+  if (/verify you are human|too many requests|access denied|checking your browser|captcha|rate limit/i.test(bodyText) ||
+      document.querySelector('iframe[src*="captcha" i], iframe[src*="turnstile" i]')) {
+    gate = "challenge";
+  } else if (/select-profile|who's watching|vem tittar|välj profil|choose profile|select profile/i.test(lowerUrl + " " + bodyText) &&
+             document.querySelectorAll('[data-uia*="profile"], [class*="profile-icon"], [data-testid*="profile"], [data-gv2elementkey*="profile"]').length > 0) {
+    gate = "profile";
+  } else if (document.querySelector('input[type="password"]') ||
+             (/\/login|\/signin|\/logga-in|\/auth|sign-in|identity\/login/.test(lowerUrl) &&
+              !document.querySelector('a[href*="/sport"], a[href*="/video"], a[href*="/entity-"]'))) {
+    gate = "login";
+  }
+
+  const links = document.querySelectorAll('a[href]').length;
+  let cards = 0;
+  let ready = false;
+
+  if (SERVICE === "SvtPlay") {
+    const hasUrql = Boolean(window.URQL_DATA && Object.values(window.URQL_DATA).some(v => typeof v?.data === "string" && v.data.includes("categoryPage")));
+    cards = document.querySelectorAll('a[href*="/video/"]').length;
+    ready = hasUrql || cards >= 2;
+  } else if (SERVICE === "Viaplay") {
+    const nextText = document.getElementById("__NEXT_DATA__")?.textContent || "";
+    cards = document.querySelectorAll('a[href*="/sport/"]').length;
+    ready = nextText.includes("viaplay:products") || cards >= 4;
+  } else if (SERVICE === "DisneyPlus") {
+    const nextText = document.getElementById("__NEXT_DATA__")?.textContent || "";
+    cards = document.querySelectorAll('a[href*="/entity-"], a[href*="/browse/entity-"], a[href*="/video/"], a[href*="/play/"], [data-testid="set-item"], [data-testid*="content-tile" i], [data-testid*="collection-tile" i], [data-gv2elementkey*="tile" i]').length;
+    ready = nextText.includes("stitchDocument") || cards >= 2;
+  } else if (SERVICE === "Tv4Play") {
+    cards = document.querySelectorAll('a[href*="/video/"], a[href*="/program/"], a[href*="/sport/"]').length;
+    ready = cards >= 3;
+  } else if (SERVICE === "Expressen") {
+    cards = document.querySelectorAll('#app a[href], main a[href]').length;
+    ready = cards >= 4 && bodyText.trim().length > 80;
+  } else {
+    cards = links;
+    ready = links >= 8 && bodyText.trim().length > 150;
+  }
+
+  return JSON.stringify({
+    ready,
+    gate,
+    links,
+    cards,
+    url: location.origin + location.pathname
+  });
+})();
+""";
+    }
+
+    /// <summary>
+    /// Selects the first unlocked (non-PIN) Disney+ profile when the background scanner WebView2
+    /// lands on /select-profile due to per-tab sessionStorage isolation. Never interacts with PINs or credentials.
+    /// </summary>
+    public static string BuildDisneyProfileAutoSelectScript() => """
+(() => {
+  const bodyText = (document.body?.innerText || "").slice(0, 3000);
+  if (document.querySelector('input[type="password"], input[inputmode="numeric"], [data-testid*="pin-input" i]') ||
+      /ange.*pin|enter.*pin/i.test(bodyText)) {
+    return "pin_required";
+  }
+
+  const rawCandidates = Array.from(document.querySelectorAll(
+    '[data-testid="profile-avatar"], [data-testid*="profile-item" i], [data-gv2elementkey*="profile" i], [class*="profile-avatar" i]'
+  ));
+
+  let sawLocked = false;
+  for (const el of rawCandidates) {
+    const rect = el.getBoundingClientRect();
+    if (rect.width < 32 || rect.height < 32) continue;
+
+    const card = el.closest('li, [role="listitem"], [data-testid*="profile" i]') || el;
+    const label = ((card.innerText || "") + " " + (el.getAttribute("aria-label") || "") + " " + (card.getAttribute("aria-label") || "")).toLowerCase();
+    if (/lägg till|add profile|redigera|edit profile|hantera|manage/i.test(label)) continue;
+
+    const hasLock = Boolean(card.querySelector('[data-testid*="lock" i], [aria-label*="pin" i], [aria-label*="lås" i], [aria-label*="lock" i], [class*="lock" i]'));
+    if (hasLock) {
+      sawLocked = true;
+      continue;
+    }
+
+    el.click();
+    return "clicked";
+  }
+
+  return sawLocked ? "pin_required" : "none";
+})();
+""";
 }

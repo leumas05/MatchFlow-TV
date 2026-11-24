@@ -37,10 +37,12 @@ public partial class MainWindow : Window
     private int _consecutiveEndedTelemetry;
     private int _stallReloadAttempts;
     private StreamingServiceId? _activeLoginService;
+    private StreamingServiceId? _visualScannerService;
     private string? _watchdogNotice;
     private bool _isFullscreen;
     private bool _isScanning;
     private bool _isScreensaverActive;
+    private bool _isVisualScannerOpen;
     private bool _isMuted;
     private bool _isTheaterMode;
     private bool _lastQuietHoursState;
@@ -108,6 +110,7 @@ public partial class MainWindow : Window
         _webViewManager = new WebViewHostManager(PlayerHostGrid, ScannerHostGrid);
         _webViewManager.TelemetryReceived += OnPlayerTelemetryReceived;
         _webViewManager.ShortcutKeyForwarded += OnForwardedShortcutKey;
+        _webViewManager.ScannerProgressChanged += OnScannerProgressChanged;
 
         _overlay = new TvOverlayWindow { Owner = this };
         WireOverlayEvents(_overlay);
@@ -154,6 +157,7 @@ public partial class MainWindow : Window
         overlay.SelectEventRequested += id => { MarkUserActivity(); _orchestrator.SelectEvent(id); };
         overlay.ScanAllRequested += async () => { MarkUserActivity(); await RunFullScanAsync(isManual: true); };
         overlay.ScanSingleServiceRequested += async svcId => { MarkUserActivity(); await RunSingleServiceScanAsync(svcId, showDiagnostics: true); };
+        overlay.OpenVisualScannerRequested += async svcId => { MarkUserActivity(); await EnterVisualScannerModeAsync(svcId, autoScan: true); };
         overlay.OpenServiceLoginRequested += async svcId => { MarkUserActivity(); await EnterLoginModeAsync(svcId); };
         overlay.ClearServiceSessionRequested += async svcId => { MarkUserActivity(); await ClearServiceSessionAsync(svcId); };
         overlay.ServiceVolumeChanged += async (svcId, vol) =>
@@ -311,7 +315,7 @@ public partial class MainWindow : Window
                 // Space out requests politely so streaming services are never hit with rapid bursts
                 if (i < targets.Count - 1)
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(4), ct);
+                    await Task.Delay(TimeSpan.FromSeconds(_isVisualScannerOpen ? 2.5 : 4), ct);
                 }
             }
 
@@ -325,8 +329,32 @@ public partial class MainWindow : Window
         {
             _isScanning = false;
             RenderStandbyDashboard();
+            if (_isVisualScannerOpen)
+            {
+                RenderScannerServiceTabs();
+            }
             SyncOverlayState();
         }
+    }
+
+    private void OnScannerProgressChanged(StreamingServiceId serviceId, string status, string sanitizedUrl)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            _visualScannerService = serviceId;
+            var svcName = _config.Services.FirstOrDefault(s => s.ServiceId == serviceId)?.DisplayName ?? serviceId.ToString();
+            StandbyScanStatusText.Text = $"{svcName}: {status}";
+            ScannerActiveServiceText.Text = svcName;
+            ScannerLiveStatusText.Text = status;
+            if (!string.IsNullOrWhiteSpace(sanitizedUrl))
+            {
+                ScannerLiveUrlText.Text = sanitizedUrl;
+            }
+            if (_isVisualScannerOpen)
+            {
+                RenderScannerServiceTabs();
+            }
+        });
     }
 
     private async Task RunSingleServiceScanAsync(StreamingServiceId serviceId, bool showDiagnostics)
@@ -354,6 +382,10 @@ public partial class MainWindow : Window
 
         StandbyScanStatusText.Text = $"{service.DisplayName} skannad ({result.Events.Count} träffar)";
         RenderStandbyDashboard();
+        if (_isVisualScannerOpen)
+        {
+            RenderScannerServiceTabs();
+        }
         SyncOverlayState();
     }
 
@@ -421,7 +453,7 @@ public partial class MainWindow : Window
         _watchdogNotice = null;
         _lastChannelSwitchUtc = DateTimeOffset.UtcNow;
 
-        if (_activeLoginService is not null)
+        if (_activeLoginService is not null || _isVisualScannerOpen)
         {
             UpdatePowerMode();
             SyncOverlayState();
@@ -577,6 +609,10 @@ public partial class MainWindow : Window
         }
 
         ExitScreensaverMode();
+        if (_isVisualScannerOpen)
+        {
+            CloseVisualScannerChromeOnly();
+        }
         _activeLoginService = serviceId;
         _overlay?.CloseAllPanels();
         UpdatePowerMode();
@@ -623,9 +659,166 @@ public partial class MainWindow : Window
         await RunSingleServiceScanAsync(scannedService, showDiagnostics: false);
     }
 
+    private void CloseVisualScannerChromeOnly()
+    {
+        _isVisualScannerOpen = false;
+        ScannerMonitorBar.Visibility = Visibility.Collapsed;
+        ScannerHostGrid.Width = 1280;
+        ScannerHostGrid.Height = 720;
+        ScannerHostGrid.HorizontalAlignment = HorizontalAlignment.Left;
+        ScannerHostGrid.VerticalAlignment = VerticalAlignment.Top;
+        ScannerHostGrid.Margin = new Thickness(-4000, -4000, 0, 0);
+        ScannerHostGrid.IsHitTestVisible = false;
+        _webViewManager?.SetVisualScannerMode(false);
+    }
+
+    private async Task EnterVisualScannerModeAsync(StreamingServiceId? initialService = null, bool autoScan = true)
+    {
+        if (_webViewManager is null)
+        {
+            return;
+        }
+
+        ExitScreensaverMode();
+        if (_activeLoginService is not null)
+        {
+            _activeLoginService = null;
+            LoginTopBar.Visibility = Visibility.Collapsed;
+            _webViewManager.ExitInteractiveLogin();
+        }
+
+        _overlay?.CloseAllPanels();
+        _isVisualScannerOpen = true;
+        _webViewManager.StopActivePlayback();
+
+        StandbyView.Visibility = Visibility.Collapsed;
+        PlayerHostGrid.Visibility = Visibility.Collapsed;
+        ScannerMonitorBar.Visibility = Visibility.Visible;
+
+        ScannerHostGrid.Width = double.NaN;
+        ScannerHostGrid.Height = double.NaN;
+        ScannerHostGrid.HorizontalAlignment = HorizontalAlignment.Stretch;
+        ScannerHostGrid.VerticalAlignment = VerticalAlignment.Stretch;
+        ScannerHostGrid.Margin = new Thickness(0);
+        ScannerHostGrid.IsHitTestVisible = true;
+
+        var targetService = initialService
+            ?? _webViewManager.CurrentVisibleScannerService
+            ?? _visualScannerService
+            ?? _config.Services.FirstOrDefault(s => s.Enabled)?.ServiceId
+            ?? StreamingServiceId.SvtPlay;
+
+        _visualScannerService = targetService;
+        _webViewManager.SetVisualScannerMode(true, targetService);
+
+        var targetCfg = _config.Services.FirstOrDefault(s => s.ServiceId == targetService);
+        if (targetCfg is not null)
+        {
+            ScannerActiveServiceText.Text = targetCfg.DisplayName;
+            if (string.IsNullOrWhiteSpace(ScannerLiveStatusText.Text))
+            {
+                ScannerLiveStatusText.Text = "Redo att skanna";
+            }
+            ScannerLiveUrlText.Text = UrlSecurityGuard.SanitizeForDisplay(targetCfg.ResolveSportsHubUrl());
+        }
+
+        RenderScannerServiceTabs();
+        UpdatePowerMode();
+
+        if (!autoScan)
+        {
+            return;
+        }
+
+        if (initialService.HasValue)
+        {
+            if (_isScanning)
+            {
+                _scanCts?.Cancel();
+            }
+            await RunSingleServiceScanAsync(initialService.Value, showDiagnostics: false);
+        }
+        else if (!_isScanning)
+        {
+            await RunFullScanAsync(isManual: true);
+        }
+    }
+
+    private async Task ExitVisualScannerModeAsync()
+    {
+        if (!_isVisualScannerOpen)
+        {
+            return;
+        }
+
+        CloseVisualScannerChromeOnly();
+        MarkUserActivity();
+        UpdatePowerMode();
+
+        if (_orchestrator.CurrentEvent is null)
+        {
+            PlayerHostGrid.Visibility = Visibility.Collapsed;
+            StandbyView.Visibility = Visibility.Visible;
+            RenderStandbyDashboard();
+        }
+        else
+        {
+            StandbyView.Visibility = Visibility.Collapsed;
+            PlayerHostGrid.Visibility = Visibility.Visible;
+            var svc = _config.Services.FirstOrDefault(s => s.ServiceId == _orchestrator.CurrentEvent.Event.ServiceId);
+            await _webViewManager!.PlayStreamAsync(
+                _orchestrator.CurrentEvent.Event.ServiceId,
+                _orchestrator.CurrentEvent.Event.WatchUrl,
+                svc?.VolumePercent ?? 100,
+                _isTheaterMode);
+        }
+
+        SyncOverlayState();
+    }
+
+    private void RenderScannerServiceTabs()
+    {
+        ScannerServiceTabsPanel.Children.Clear();
+        foreach (var svc in _config.Services)
+        {
+            var isCurrent = _visualScannerService == svc.ServiceId;
+            var countTag = svc.LastLiveCount > 0
+                ? $" ({svc.LastLiveCount} live)"
+                : svc.LastUpcomingCount > 0
+                    ? $" ({svc.LastUpcomingCount} komm.)"
+                    : svc.AuthState == ServiceAuthState.LoginRequired
+                        ? " (Logga in)"
+                        : svc.AuthState == ServiceAuthState.ProfileSelectionRequired
+                            ? " (Profil)"
+                            : string.Empty;
+
+            var btn = new Button
+            {
+                Content = $"{svc.DisplayName}{countTag}",
+                Style = (Style)FindResource(isCurrent ? "TvAccentButtonStyle" : "TvButtonStyle"),
+                Padding = new Thickness(10, 5, 10, 5),
+                FontSize = 12,
+                Margin = new Thickness(0, 0, 6, 4)
+            };
+            btn.Click += async (_, _) =>
+            {
+                MarkUserActivity();
+                if (_isScanning)
+                {
+                    _scanCts?.Cancel();
+                }
+                _visualScannerService = svc.ServiceId;
+                _webViewManager?.ShowScannerService(svc.ServiceId);
+                RenderScannerServiceTabs();
+                await RunSingleServiceScanAsync(svc.ServiceId, showDiagnostics: false);
+            };
+            ScannerServiceTabsPanel.Children.Add(btn);
+        }
+    }
+
     private void EnterScreensaverMode()
     {
-        if (_isScreensaverActive || _orchestrator.CurrentEvent is not null || _activeLoginService is not null)
+        if (_isScreensaverActive || _orchestrator.CurrentEvent is not null || _activeLoginService is not null || _isVisualScannerOpen)
         {
             return;
         }
@@ -661,7 +854,7 @@ public partial class MainWindow : Window
         _screensaverDriftTimer.Stop();
         ScreensaverView.Visibility = Visibility.Collapsed;
 
-        if (_orchestrator.CurrentEvent is null && _activeLoginService is null)
+        if (_orchestrator.CurrentEvent is null && _activeLoginService is null && !_isVisualScannerOpen)
         {
             StandbyView.Visibility = Visibility.Visible;
         }
@@ -728,7 +921,7 @@ public partial class MainWindow : Window
 
     private void UpdatePowerMode()
     {
-        var isPlayingOrLogin = _orchestrator.CurrentEvent is not null || _activeLoginService is not null;
+        var isPlayingOrLogin = _orchestrator.CurrentEvent is not null || _activeLoginService is not null || _isVisualScannerOpen;
         var keepDisplayOn = isPlayingOrLogin
             ? _config.RankingProfile.PreventScreenSleep
             : _config.RankingProfile.PreventScreenSleep && !_config.RankingProfile.AllowDisplaySleepWhenNoSport;
@@ -847,7 +1040,7 @@ public partial class MainWindow : Window
                 return;
             }
 
-            if (_activeLoginService is null && _orchestrator.CurrentEvent is not null &&
+            if (_activeLoginService is null && !_isVisualScannerOpen && _orchestrator.CurrentEvent is not null &&
                 _overlay is not null && _overlay.ActiveSection == TvOverlayWindow.OverlaySection.None)
             {
                 _overlay.ShowSection(TvOverlayWindow.OverlaySection.OsdOnly, _config.RankingProfile, autoHideOsd: true);
@@ -858,6 +1051,7 @@ public partial class MainWindow : Window
         if (!_isScreensaverActive &&
             _orchestrator.CurrentEvent is null &&
             _activeLoginService is null &&
+            !_isVisualScannerOpen &&
             _config.RankingProfile.EnableIdleScreensaver &&
             _overlay?.HasVisibleContent != true)
         {
@@ -879,6 +1073,15 @@ public partial class MainWindow : Window
                 if (rawKey.Equals("Escape", StringComparison.OrdinalIgnoreCase))
                 {
                     _ = ExitLoginModeAsync();
+                }
+                return;
+            }
+
+            if (_isVisualScannerOpen)
+            {
+                if (rawKey.Equals("Escape", StringComparison.OrdinalIgnoreCase) || rawKey.Equals("v", StringComparison.OrdinalIgnoreCase))
+                {
+                    _ = ExitVisualScannerModeAsync();
                 }
                 return;
             }
@@ -908,6 +1111,16 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (_isVisualScannerOpen)
+        {
+            if (e.Key is Key.Escape or Key.V)
+            {
+                _ = ExitVisualScannerModeAsync();
+                e.Handled = true;
+            }
+            return;
+        }
+
         if (Keyboard.FocusedElement is TextBox)
         {
             return;
@@ -918,6 +1131,7 @@ public partial class MainWindow : Window
             Key.G or Key.Tab => "g",
             Key.R => "r",
             Key.L => "l",
+            Key.V => "v",
             Key.N or Key.PageUp or Key.MediaNextTrack => "n",
             Key.B or Key.PageDown or Key.MediaPreviousTrack => "b",
             Key.S => "s",
@@ -970,6 +1184,10 @@ public partial class MainWindow : Window
                         ? TvOverlayWindow.OverlaySection.None
                         : TvOverlayWindow.OverlaySection.Services,
                     _config.RankingProfile);
+                return true;
+
+            case "v":
+                _ = EnterVisualScannerModeAsync(null, autoScan: true);
                 return true;
 
             case "i":
@@ -1124,6 +1342,7 @@ public partial class MainWindow : Window
             _updateManager.CanSelfReplaceExecutable &&
             _orchestrator.CurrentEvent is null &&
             _activeLoginService is null &&
+            !_isVisualScannerOpen &&
             _overlay?.HasVisibleContent != true)
         {
             await ApplyStagedUpdateAndRestartAsync();
@@ -1197,6 +1416,7 @@ public partial class MainWindow : Window
     private void StandbyGuide_Click(object sender, RoutedEventArgs e) { MarkUserActivity(); _overlay?.ShowSection(TvOverlayWindow.OverlaySection.Guide, _config.RankingProfile); }
     private void StandbyRanking_Click(object sender, RoutedEventArgs e) { MarkUserActivity(); _overlay?.ShowSection(TvOverlayWindow.OverlaySection.Ranking, _config.RankingProfile); }
     private void StandbyServices_Click(object sender, RoutedEventArgs e) { MarkUserActivity(); _overlay?.ShowSection(TvOverlayWindow.OverlaySection.Services, _config.RankingProfile); }
+    private async void StandbyVisualScanner_Click(object sender, RoutedEventArgs e) { MarkUserActivity(); await EnterVisualScannerModeAsync(null, autoScan: true); }
     private async void StandbyScanNow_Click(object sender, RoutedEventArgs e) { MarkUserActivity(); await RunFullScanAsync(isManual: true); }
     private async void StandbyInstallUpdate_Click(object sender, RoutedEventArgs e) { MarkUserActivity(); await ApplyStagedUpdateAndRestartAsync(); }
     private void StandbyScreensaver_Click(object sender, RoutedEventArgs e) => EnterScreensaverMode();
@@ -1204,11 +1424,43 @@ public partial class MainWindow : Window
     private void ScreensaverView_MouseDown(object sender, MouseButtonEventArgs e) => ExitScreensaverMode();
     private async void ExitLoginMode_Click(object sender, RoutedEventArgs e) => await ExitLoginModeAsync();
 
+    private async void LoginOpenVisualScanner_Click(object sender, RoutedEventArgs e)
+    {
+        if (_activeLoginService is { } svcId)
+        {
+            await EnterVisualScannerModeAsync(svcId, autoScan: true);
+        }
+    }
+
     private async void LoginRescanService_Click(object sender, RoutedEventArgs e)
     {
         if (_activeLoginService is { } svcId)
         {
             await RunSingleServiceScanAsync(svcId, showDiagnostics: false);
         }
+    }
+
+    private async void ScannerOpenLogin_Click(object sender, RoutedEventArgs e)
+    {
+        MarkUserActivity();
+        var target = _visualScannerService ?? _webViewManager?.CurrentVisibleScannerService ?? StreamingServiceId.DisneyPlus;
+        await EnterLoginModeAsync(target);
+    }
+
+    private async void ScannerScanAll_Click(object sender, RoutedEventArgs e)
+    {
+        MarkUserActivity();
+        if (_isScanning)
+        {
+            _scanCts?.Cancel();
+            await Task.Delay(250);
+        }
+        await RunFullScanAsync(isManual: true);
+    }
+
+    private async void ExitVisualScanner_Click(object sender, RoutedEventArgs e)
+    {
+        MarkUserActivity();
+        await ExitVisualScannerModeAsync();
     }
 }

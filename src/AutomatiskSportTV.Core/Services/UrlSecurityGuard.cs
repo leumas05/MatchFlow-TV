@@ -14,7 +14,7 @@ public static class UrlSecurityGuard
         [StreamingServiceId.SvtPlay] = ["svtplay.se", "svt.se"],
         [StreamingServiceId.Tv4Play] = ["tv4play.se", "tv4.se", "bonniernews.se"],
         [StreamingServiceId.Viaplay] = ["viaplay.se", "viaplay.com", "viaplaygroup.com"],
-        [StreamingServiceId.DisneyPlus] = ["disneyplus.com", "disney.com", "bamgrid.com"],
+        [StreamingServiceId.DisneyPlus] = ["disneyplus.com", "disney.com", "bamgrid.com", "dssott.com", "disney-plus.net", "registerdisney.go.com"],
         [StreamingServiceId.PrimeVideo] = ["primevideo.com", "amazon.se", "amazon.com", "amazon.co.uk"],
         [StreamingServiceId.Netflix] = ["netflix.com", "nflxvideo.net"],
         [StreamingServiceId.Expressen] = ["expressen.se", "bonniernews.se", "staylive.tv", "staylive.io"],

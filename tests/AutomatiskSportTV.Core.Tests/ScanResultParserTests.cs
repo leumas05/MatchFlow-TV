@@ -101,4 +101,40 @@ public class ScanResultParserTests
         Assert.Equal("Tennis", result.Events[0].Sport);
         Assert.Equal("Roland Garros", result.Events[0].League);
     }
+
+    [Fact]
+    public void Parse_CapturesDiagnosticsAndDisneyPlusAuthenticatedEvents()
+    {
+        const string json = """
+        {
+          "service": "DisneyPlus",
+          "url": "https://www.disneyplus.com/sv-se/browse/page-1eaf1f02-deb4-48d0-b54f-cbf7a843e8f3?token=secret123",
+          "pageTitle": "Sport | Disney+",
+          "authState": "authenticated",
+          "extractorUsed": "DisneyPlus:DOM",
+          "linksInspected": 42,
+          "pageSnippet": "Live och kommande UEFA Europa League",
+          "events": [
+            {
+              "title": "Malmö FF - Galatasaray",
+              "subtitle": "LIVE • UEFA Europa League",
+              "status": "Live",
+              "watchUrl": "https://www.disneyplus.com/sv-se/browse/entity-12345678-aaaa-bbbb-cccc-1234567890ab"
+            }
+          ]
+        }
+        """;
+
+        var result = ScanResultParser.Parse(StreamingServiceId.DisneyPlus, "Disney+", json);
+
+        Assert.Equal(ServiceAuthState.Authenticated, result.AuthState);
+        Assert.Equal("DisneyPlus:DOM", result.ExtractorUsed);
+        Assert.Equal(42, result.LinksInspected);
+        Assert.Equal("https://www.disneyplus.com/sv-se/browse/page-1eaf1f02-deb4-48d0-b54f-cbf7a843e8f3", result.Url);
+        Assert.Contains("UEFA Europa League", result.PageSnippet);
+        Assert.Single(result.Events);
+        Assert.Equal(EventStatus.Live, result.Events[0].Status);
+        Assert.Equal("Fotboll", result.Events[0].Sport);
+        Assert.Equal("Europa League", result.Events[0].League);
+    }
 }

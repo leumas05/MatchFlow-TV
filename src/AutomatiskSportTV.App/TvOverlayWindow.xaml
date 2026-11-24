@@ -105,6 +105,7 @@
                     <Button Content="📺 Sportguide (G)" Style="{StaticResource TvButtonStyle}" Margin="0,0,8,6" Click="OpenGuide_Click" />
                     <Button Content="⭐ Rangordning (R)" Style="{StaticResource TvButtonStyle}" Margin="0,0,8,6" Click="OpenRanking_Click" />
                     <Button Content="🔑 Tjänster (L)" Style="{StaticResource TvButtonStyle}" Margin="0,0,8,6" Click="OpenServices_Click" />
+                    <Button Content="👁 Skanner (V)" Style="{StaticResource TvButtonStyle}" Margin="0,0,8,6" Click="OpenVisualScanner_Click" />
                     <Button x:Name="OsdUpdateButton" Visibility="Collapsed" Content="⬆ Uppdatera nu" Style="{StaticResource TvAccentButtonStyle}" Margin="0,0,8,6" Click="InstallUpdateNow_Click" />
                     <Button Content="⛶ Fullskärm (F11)" Style="{StaticResource TvButtonStyle}" Margin="0,0,8,6" Click="ToggleFullscreen_Click" />
                     <Button Content="?" Style="{StaticResource TvButtonStyle}" Width="44" Margin="0,0,0,6" Click="OpenHelp_Click" ToolTip="Snabbkommandon (F1)" />
@@ -130,6 +131,7 @@
 
                 <DockPanel Grid.Row="0" Margin="0,0,0,18">
                     <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                        <Button Content="👁 Visa skanner live (V)" Style="{StaticResource TvButtonStyle}" Margin="0,0,10,0" Click="OpenVisualScanner_Click" />
                         <Button x:Name="GuideScanNowButton" Content="⟳ Skanna alla tjänster nu" Style="{StaticResource TvAccentButtonStyle}" Margin="0,0,10,0" Click="ScanAllNow_Click" />
                         <Button Content="Stäng (Esc)" Style="{StaticResource TvButtonStyle}" Click="CloseModals_Click" />
                     </StackPanel>
@@ -343,6 +345,7 @@
 
                 <DockPanel Grid.Row="0" Margin="0,0,0,18">
                     <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                        <Button Content="👁 Visa skanner live (V)" Style="{StaticResource TvButtonStyle}" Margin="0,0,10,0" Click="OpenVisualScanner_Click" />
                         <Button Content="⟳ Skanna alla nu" Style="{StaticResource TvAccentButtonStyle}" Margin="0,0,10,0" Click="ScanAllNow_Click" />
                         <Button Content="Stäng (Esc)" Style="{StaticResource TvButtonStyle}" Click="CloseModals_Click" />
                     </StackPanel>
@@ -395,6 +398,7 @@
                     • <Bold>G / Tab</Bold> — Öppna Sportguiden (bläddra med <Bold>Upp/Ner</Bold> och välj med <Bold>Enter</Bold>)&#x0a;
                     • <Bold>R</Bold> — Öppna Rangordning, Nattläge, Skärmsläckare &amp; Autostart&#x0a;
                     • <Bold>L</Bold> — Streamingtjänster, Inloggning &amp; Volym per tjänst&#x0a;
+                    • <Bold>V</Bold> — Öppna/stäng visuell live-skanner (se exakt vad appen skannar i realtid)&#x0a;
                     • <Bold>N / PageUp</Bold> — Nästa högst rankade match • <Bold>B / PageDown</Bold> — Föregående&#x0a;
                     • <Bold>S</Bold> — Hoppa över denna match • <Bold>P</Bold> — Lås nuvarande match&#x0a;
                     • <Bold>M</Bold> — Ljud av/på (Mute) • <Bold>T</Bold> — Växla helbild/sajtvy i spelaren&#x0a;

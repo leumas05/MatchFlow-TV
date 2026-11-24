@@ -17,16 +17,7 @@
         PreviewKeyDown="MainWindow_PreviewKeyDown">
 
     <Grid ClipToBounds="True">
-        <!-- Offscreen host for silent background WebView2 sports scanners -->
-        <Grid x:Name="ScannerHostGrid"
-              Width="1280"
-              Height="720"
-              HorizontalAlignment="Left"
-              VerticalAlignment="Top"
-              Margin="-4000,-4000,0,0"
-              IsHitTestVisible="False" />
-
-        <!-- Main Viewport Layout (Row 0 = Login Top Bar when active, Row 1 = Standby, Screensaver, or Player WebView2) -->
+        <!-- Main Viewport Layout (Row 0 = Login / Visual Scanner Top Bar when active, Row 1 = Standby, Screensaver, Player, or Visual Scanner WebView2) -->
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
@@ -43,6 +34,7 @@
                     Padding="24,12">
                 <DockPanel>
                     <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                        <Button Content="👁 Öppna i visuell skanner" Style="{StaticResource TvButtonStyle}" Margin="0,0,10,0" Click="LoginOpenVisualScanner_Click" />
                         <Button Content="⟳ Skanna denna tjänst nu" Style="{StaticResource TvButtonStyle}" Margin="0,0,10,0" Click="LoginRescanService_Click" />
                         <Button Content="✓ Klar — Tillbaka till TV (Esc)" Style="{StaticResource TvAccentButtonStyle}" Click="ExitLoginMode_Click" />
                     </StackPanel>
@@ -53,8 +45,47 @@
                 </DockPanel>
             </Border>
 
+            <!-- Visual Live Scanner Monitor Top Bar (sits cleanly above ScannerHostGrid with zero airspace overlap) -->
+            <Border x:Name="ScannerMonitorBar"
+                    Grid.Row="0"
+                    Visibility="Collapsed"
+                    Background="#0B1324"
+                    BorderBrush="#38BDF8"
+                    BorderThickness="0,0,0,2"
+                    Padding="20,10">
+                <StackPanel>
+                    <DockPanel Margin="0,0,0,8">
+                        <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
+                            <Button x:Name="ScannerOpenLoginButton" Content="🔑 Logga in på tjänsten" Style="{StaticResource TvButtonStyle}" Padding="12,7" FontSize="13" Margin="0,0,8,0" Click="ScannerOpenLogin_Click" />
+                            <Button Content="⟳ Skanna alla visuellt" Style="{StaticResource TvAccentButtonStyle}" Padding="12,7" FontSize="13" Margin="0,0,8,0" Click="ScannerScanAll_Click" />
+                            <Button Content="✕ Stäng skannervy (V / Esc)" Style="{StaticResource TvButtonStyle}" Padding="12,7" FontSize="13" Click="ExitVisualScanner_Click" />
+                        </StackPanel>
+                        <StackPanel VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <Border Background="#0284C7" CornerRadius="6" Padding="8,3" Margin="0,0,10,0">
+                                    <TextBlock Text="👁 LIVE-SKANNER" Foreground="White" FontSize="11" FontWeight="Bold" />
+                                </Border>
+                                <TextBlock x:Name="ScannerActiveServiceText" Text="Redo att skanna" Foreground="#F8FAFC" FontSize="16" FontWeight="Bold" VerticalAlignment="Center" />
+                                <TextBlock x:Name="ScannerLiveStatusText" Text="" Foreground="#38BDF8" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" Margin="12,0,0,0" TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                            <TextBlock x:Name="ScannerLiveUrlText" Text="Klicka på en tjänst nedan för att se exakt vad skannern laddar — du kan även klicka direkt på sidan." Foreground="#94A3B8" FontSize="12" Margin="0,3,0,0" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                    </DockPanel>
+                    <WrapPanel x:Name="ScannerServiceTabsPanel" />
+                </StackPanel>
+            </Border>
+
             <!-- TV Viewport Area -->
-            <Grid Grid.Row="1">
+            <Grid Grid.Row="1" ClipToBounds="True">
+                <!-- Background / Visual WebView2 Sports Scanner Host (offscreen by default, full-size interactive when Visual Scanner Mode is open) -->
+                <Grid x:Name="ScannerHostGrid"
+                      Width="1280"
+                      Height="720"
+                      HorizontalAlignment="Left"
+                      VerticalAlignment="Top"
+                      Margin="-4000,-4000,0,0"
+                      Background="Black"
+                      IsHitTestVisible="False" />
                 <!-- Standby / No Active Match View -->
                 <Grid x:Name="StandbyView" Background="#090D16">
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -83,6 +114,7 @@
                                 <Button Content="📺 Sportguide (G)" Style="{StaticResource TvAccentButtonStyle}" Margin="0,0,12,10" Click="StandbyGuide_Click" />
                                 <Button Content="⭐ Rangordning (R)" Style="{StaticResource TvButtonStyle}" Margin="0,0,12,10" Click="StandbyRanking_Click" />
                                 <Button Content="🔑 Tjänster &amp; Inloggning (L)" Style="{StaticResource TvButtonStyle}" Margin="0,0,12,10" Click="StandbyServices_Click" />
+                                <Button Content="👁 Visa live-skanner (V)" Style="{StaticResource TvButtonStyle}" Margin="0,0,12,10" Click="StandbyVisualScanner_Click" />
                                 <Button Content="⟳ Skanna alla nu" Style="{StaticResource TvButtonStyle}" Margin="0,0,12,10" Click="StandbyScanNow_Click" />
                                 <Button x:Name="StandbyUpdateButton" Visibility="Collapsed" Content="⬆ Uppdatera MatchFlow TV" Style="{StaticResource TvAccentButtonStyle}" Margin="0,0,12,10" Click="StandbyInstallUpdate_Click" />
                                 <Button Content="🌙 Skärmsläckare (Z)" Style="{StaticResource TvButtonStyle}" Margin="0,0,12,10" Click="StandbyScreensaver_Click" />
