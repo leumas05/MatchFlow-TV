@@ -23,14 +23,15 @@ public sealed class RankingEngine
     public IReadOnlyList<RankedSportEvent> Rank(
         IEnumerable<SportEvent> events,
         RankingProfile profile,
-        IReadOnlySet<string>? skippedEventIds = null)
+        IReadOnlySet<string>? skippedEventIds = null,
+        IReadOnlyList<ServiceConfig>? services = null)
     {
         var results = new List<RankedSportEvent>();
 
         foreach (var evt in events)
         {
             SportsKnowledgeBase.Enrich(evt);
-            results.Add(ScoreSingle(evt, profile, skippedEventIds));
+            results.Add(ScoreSingle(evt, profile, skippedEventIds, services));
         }
 
         var ordered = results
@@ -49,7 +50,8 @@ public sealed class RankingEngine
     private static RankedSportEvent ScoreSingle(
         SportEvent evt,
         RankingProfile profile,
-        IReadOnlySet<string>? skippedEventIds)
+        IReadOnlySet<string>? skippedEventIds,
+        IReadOnlyList<ServiceConfig>? services)
     {
         var searchable = $"{evt.Title} {evt.RawSubtitle} {evt.League} {evt.Sport} {evt.ServiceName} {string.Join(' ', evt.Teams)}";
         var reasons = new List<string>();
@@ -60,6 +62,13 @@ public sealed class RankingEngine
         {
             blocked = true;
             reasons.Add($"Dold sport: {evt.Sport}");
+        }
+
+        var serviceConfig = services?.FirstOrDefault(s => s.ServiceId == evt.ServiceId);
+        if (serviceConfig is not null && serviceConfig.IsSportBlocked(evt.Sport))
+        {
+            blocked = true;
+            reasons.Add($"Avstängd sport på {evt.ServiceName}: {evt.Sport}");
         }
 
         foreach (var keyword in profile.BlockedKeywords)

@@ -34,6 +34,7 @@ public partial class TvOverlayWindow : Window
     private PendingSwitchOffer? _pendingOffer;
     private string _selectedSportFilter = "Alla";
     private readonly List<Button> _guideFocusButtons = [];
+    private readonly HashSet<StreamingServiceId> _expandedServiceSports = [];
     private int _guideSelectedIndex;
     private bool _isMuted;
     private bool _isTheaterMode = true;
@@ -1084,6 +1085,7 @@ public partial class TvOverlayWindow : Window
             var grid = new Grid();
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
             var header = new DockPanel();
             var actions = new StackPanel { Orientation = Orientation.Horizontal };
@@ -1272,6 +1274,133 @@ public partial class TvOverlayWindow : Window
 
             Grid.SetRow(urlRow, 1);
             grid.Children.Add(urlRow);
+
+            // Row 2: Per-service sport filter (allow disabling specific sports on this specific service, e.g. Ishockey on TV4 Play)
+            service.BlockedSports ??= [];
+            var isExpanded = _expandedServiceSports.Contains(service.ServiceId);
+            var sportsSection = new StackPanel { Margin = new Thickness(24, 10, 0, 0) };
+
+            var sportsHeader = new DockPanel();
+            var expandControls = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            DockPanel.SetDock(expandControls, Dock.Right);
+
+            if (service.BlockedSports.Count > 0)
+            {
+                var resetSportsBtn = new Button
+                {
+                    Content = "Aktivera alla",
+                    Style = (Style)FindResource("TvButtonStyle"),
+                    Padding = new Thickness(8, 3, 8, 3),
+                    FontSize = 11,
+                    Margin = new Thickness(0, 0, 6, 0)
+                };
+                resetSportsBtn.Click += (_, _) =>
+                {
+                    service.BlockedSports.Clear();
+                    ServicesChanged?.Invoke(_services);
+                    RenderServicesPanel();
+                };
+                expandControls.Children.Add(resetSportsBtn);
+            }
+
+            var toggleSportsBtn = new Button
+            {
+                Content = isExpanded ? "Dölj sporter ▴" : (service.BlockedSports.Count > 0 ? $"Ändra sporter ({service.BlockedSports.Count} av) ▾" : "Välj sporter ▾"),
+                Style = (Style)FindResource(isExpanded ? "TvAccentButtonStyle" : "TvButtonStyle"),
+                Padding = new Thickness(10, 4, 10, 4),
+                FontSize = 11
+            };
+            toggleSportsBtn.Click += (_, _) =>
+            {
+                if (!_expandedServiceSports.Remove(service.ServiceId))
+                {
+                    _expandedServiceSports.Add(service.ServiceId);
+                }
+                RenderServicesPanel();
+            };
+            expandControls.Children.Add(toggleSportsBtn);
+            sportsHeader.Children.Add(expandControls);
+
+            var summaryWrap = new WrapPanel { VerticalAlignment = VerticalAlignment.Center };
+            summaryWrap.Children.Add(new TextBlock
+            {
+                Text = service.BlockedSports.Count == 0 ? "Sporter: Alla aktiva" : "Avstängda sporter:",
+                Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
+                FontSize = 12,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 8, 2)
+            });
+
+            if (!isExpanded)
+            {
+                foreach (var blockedSport in service.BlockedSports.ToList())
+                {
+                    var chip = new Button
+                    {
+                        Content = $"🚫 {blockedSport} ✕",
+                        Background = new SolidColorBrush(Color.FromRgb(69, 10, 10)),
+                        Foreground = new SolidColorBrush(Color.FromRgb(252, 165, 165)),
+                        BorderBrush = new SolidColorBrush(Color.FromRgb(220, 38, 38)),
+                        BorderThickness = new Thickness(1),
+                        Style = (Style)FindResource("TvButtonStyle"),
+                        Padding = new Thickness(8, 2, 8, 2),
+                        FontSize = 11,
+                        Margin = new Thickness(0, 0, 6, 2),
+                        ToolTip = $"Klicka för att aktivera {blockedSport} på {service.DisplayName} igen"
+                    };
+                    chip.Click += (_, _) =>
+                    {
+                        service.BlockedSports.RemoveAll(s => s.Equals(blockedSport, StringComparison.OrdinalIgnoreCase));
+                        ServicesChanged?.Invoke(_services);
+                        RenderServicesPanel();
+                    };
+                    summaryWrap.Children.Add(chip);
+                }
+            }
+
+            sportsHeader.Children.Add(summaryWrap);
+            sportsSection.Children.Add(sportsHeader);
+
+            if (isExpanded)
+            {
+                var sportPills = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
+                foreach (var sport in SportsKnowledgeBase.KnownSports)
+                {
+                    var isBlocked = service.IsSportBlocked(sport);
+                    var pill = new Button
+                    {
+                        Content = isBlocked ? $"🚫 {sport}" : $"✓ {sport}",
+                        Style = (Style)FindResource("TvButtonStyle"),
+                        Background = new SolidColorBrush(isBlocked ? Color.FromRgb(69, 10, 10) : Color.FromRgb(20, 48, 36)),
+                        BorderBrush = new SolidColorBrush(isBlocked ? Color.FromRgb(220, 38, 38) : Color.FromRgb(34, 197, 94)),
+                        Foreground = new SolidColorBrush(isBlocked ? Color.FromRgb(252, 165, 165) : Color.FromRgb(220, 252, 231)),
+                        Padding = new Thickness(9, 4, 9, 4),
+                        FontSize = 11,
+                        Margin = new Thickness(0, 0, 6, 6),
+                        ToolTip = isBlocked
+                            ? $"Klicka för att aktivera {sport} på {service.DisplayName}"
+                            : $"Klicka för att stänga av {sport} på enbart {service.DisplayName}"
+                    };
+                    pill.Click += (_, _) =>
+                    {
+                        if (service.IsSportBlocked(sport))
+                        {
+                            service.BlockedSports.RemoveAll(s => s.Equals(sport, StringComparison.OrdinalIgnoreCase));
+                        }
+                        else
+                        {
+                            service.BlockedSports.Add(sport);
+                        }
+                        ServicesChanged?.Invoke(_services);
+                        RenderServicesPanel();
+                    };
+                    sportPills.Children.Add(pill);
+                }
+                sportsSection.Children.Add(sportPills);
+            }
+
+            Grid.SetRow(sportsSection, 2);
+            grid.Children.Add(sportsSection);
 
             card.Child = grid;
             ServicesCardsPanel.Children.Add(card);

@@ -158,11 +158,15 @@ public sealed class AppStateStore
             {
                 snapshot.Services.Add(def);
             }
-            else if (LegacyDefaultUrls.TryGetValue(def.ServiceId, out var legacyUrls) &&
-                     legacyUrls.Any(old => old.Equals(existing.SportsHubUrl?.Trim(), StringComparison.OrdinalIgnoreCase)))
+            else
             {
-                existing.SportsHubUrl = def.SportsHubUrl;
-                existing.LoginUrl = def.LoginUrl;
+                existing.BlockedSports ??= [];
+                if (LegacyDefaultUrls.TryGetValue(def.ServiceId, out var legacyUrls) &&
+                    legacyUrls.Any(old => old.Equals(existing.SportsHubUrl?.Trim(), StringComparison.OrdinalIgnoreCase)))
+                {
+                    existing.SportsHubUrl = def.SportsHubUrl;
+                    existing.LoginUrl = def.LoginUrl;
+                }
             }
 
             if (!snapshot.RankingProfile.ServicePriorities.Contains(def.ServiceId))

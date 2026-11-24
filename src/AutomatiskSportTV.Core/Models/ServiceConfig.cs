@@ -13,11 +13,18 @@ public sealed class ServiceConfig
     public string SportsHubUrl { get; set; } = string.Empty;
     public string LoginUrl { get; set; } = string.Empty;
     public int VolumePercent { get; set; } = 100;
+    /// <summary>Sports explicitly turned off for this specific streaming service (e.g. Ishockey on TV4 Play).</summary>
+    public List<string> BlockedSports { get; set; } = [];
     public ServiceAuthState AuthState { get; set; } = ServiceAuthState.Unknown;
     public DateTimeOffset? LastScanUtc { get; set; }
     public int LastLiveCount { get; set; }
     public int LastUpcomingCount { get; set; }
     public string? LastError { get; set; }
+
+    public bool IsSportBlocked(string? sport) =>
+        !string.IsNullOrWhiteSpace(sport) &&
+        BlockedSports is not null &&
+        BlockedSports.Any(s => s.Equals(sport.Trim(), StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// Resolves dynamic placeholders such as {today} (yyyy-MM-dd in local time) inside SportsHubUrl.

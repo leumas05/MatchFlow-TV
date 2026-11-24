@@ -77,4 +77,31 @@ public class RankingEngineTests
         Assert.Contains("Minus: studion (-1500)", ranked[1].ScoreBreakdown);
         Assert.Contains("Minus: Youth League (-1200)", ranked[2].ScoreBreakdown);
     }
+
+    [Fact]
+    public void Rank_BlocksSpecificSportOnlyOnConfiguredService()
+    {
+        var profile = RankingProfile.CreateDefault();
+        var services = ServiceConfig.CreateDefaults();
+        services.Single(s => s.ServiceId == StreamingServiceId.Tv4Play).BlockedSports = ["Ishockey"];
+
+        var engine = new RankingEngine();
+        var events = new[]
+        {
+            new SportEvent { Id = "tv4-hockey", ServiceId = StreamingServiceId.Tv4Play, ServiceName = "TV4 Play", Title = "Frölunda - Luleå (SHL)", Status = EventStatus.Live },
+            new SportEvent { Id = "tv4-fotboll", ServiceId = StreamingServiceId.Tv4Play, ServiceName = "TV4 Play", Title = "AIK - Djurgården (Allsvenskan)", Status = EventStatus.Live },
+            new SportEvent { Id = "viaplay-hockey", ServiceId = StreamingServiceId.Viaplay, ServiceName = "Viaplay", Title = "Toronto Maple Leafs - Montreal Canadiens (NHL)", Status = EventStatus.Live }
+        };
+
+        var ranked = engine.Rank(events, profile, services: services);
+
+        var tv4Hockey = ranked.Single(r => r.Event.Id == "tv4-hockey");
+        var tv4Fotboll = ranked.Single(r => r.Event.Id == "tv4-fotboll");
+        var viaplayHockey = ranked.Single(r => r.Event.Id == "viaplay-hockey");
+
+        Assert.True(tv4Hockey.IsBlockedOrMuted);
+        Assert.Contains("TV4 Play", tv4Hockey.ScoreBreakdown);
+        Assert.False(tv4Fotboll.IsBlockedOrMuted);
+        Assert.False(viaplayHockey.IsBlockedOrMuted);
+    }
 }

@@ -450,8 +450,8 @@ public partial class MainWindow : Window
     {
         service.AuthState = result.AuthState;
         service.LastScanUtc = DateTimeOffset.UtcNow;
-        service.LastLiveCount = result.Events.Count(e => e.Status == EventStatus.Live);
-        service.LastUpcomingCount = result.Events.Count(e => e.Status == EventStatus.Upcoming);
+        service.LastLiveCount = result.Events.Count(e => e.Status == EventStatus.Live && !service.IsSportBlocked(e.Sport));
+        service.LastUpcomingCount = result.Events.Count(e => e.Status == EventStatus.Upcoming && !service.IsSportBlocked(e.Sport));
         service.LastError = result.AuthState is ServiceAuthState.Error or ServiceAuthState.RateLimitedOrChallenge
             ? (service.LastError ?? "Skanning pausad tillfälligt")
             : null;
@@ -465,15 +465,20 @@ public partial class MainWindow : Window
     private void RecomputeCatalog()
     {
         var merged = new List<SportEvent>();
-        foreach (var service in _config.Services.Where(s => s.Enabled))
+        foreach (var service in _config.Services)
         {
             if (_eventsByService.TryGetValue(service.ServiceId, out var list))
             {
-                merged.AddRange(list);
+                service.LastLiveCount = list.Count(e => e.Status == EventStatus.Live && !service.IsSportBlocked(e.Sport));
+                service.LastUpcomingCount = list.Count(e => e.Status == EventStatus.Upcoming && !service.IsSportBlocked(e.Sport));
+                if (service.Enabled)
+                {
+                    merged.AddRange(list);
+                }
             }
         }
 
-        _orchestrator.UpdateCatalog(merged, _config.RankingProfile, quietHoursActive: IsQuietHoursNow());
+        _orchestrator.UpdateCatalog(merged, _config.RankingProfile, quietHoursActive: IsQuietHoursNow(), services: _config.Services);
     }
 
     private async void OnActiveChannelChanged(RankedSportEvent? target)

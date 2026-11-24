@@ -44,14 +44,18 @@ public sealed class ChannelOrchestrator
     /// <summary>
     /// Updates the full catalog of discovered events, re-ranks them, and evaluates auto-switch and quiet-hour rules.
     /// </summary>
-    public void UpdateCatalog(IEnumerable<SportEvent> allEvents, RankingProfile profile, bool quietHoursActive = false)
+    public void UpdateCatalog(
+        IEnumerable<SportEvent> allEvents,
+        RankingProfile profile,
+        bool quietHoursActive = false,
+        IReadOnlyList<ServiceConfig>? services = null)
     {
         if (!quietHoursActive)
         {
             _manualQuietOverride = false;
         }
 
-        var ranked = _rankingEngine.Rank(allEvents, profile, _skippedEventIds);
+        var ranked = _rankingEngine.Rank(allEvents, profile, _skippedEventIds, services);
         LiveEvents = ranked
             .Where(r => r.Event.Status == EventStatus.Live && !r.IsBlockedOrMuted && !_endedEventIds.Contains(r.Event.Id))
             .ToList();
