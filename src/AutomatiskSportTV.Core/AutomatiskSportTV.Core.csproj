@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>AutomatiskSportTV.Core</RootNamespace>
+    <Authors>S4m.dev</Authors>
+    <Company>S4m.dev</Company>
+    <Copyright>Copyright 2026 S4m.dev (https://www.s4m.dev/)</Copyright>
+    <PackageProjectUrl>https://www.s4m.dev/</PackageProjectUrl>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+  </PropertyGroup>
+</Project>

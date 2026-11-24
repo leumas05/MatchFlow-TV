@@ -1,0 +1,20 @@
+# Build & release artifacts
+bin/
+obj/
+dist/
+publish/
+*.user
+*.suo
+*.cache
+.vs/
+.vscode/
+
+# Local runtime state, browser profiles, and secrets (never commit!)
+Profiles/
+config.json
+*.env
+.env*
+*.pfx
+*.pem
+*.key
+*.log

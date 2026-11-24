@@ -1,0 +1,125 @@
+name: Release MatchFlow TV (Windows)
+
+on:
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release version tag (e.g. v1.0.1)'
+        required: true
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  release-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release version & check if new release should be published
+        id: version
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $tag = "${{ inputs.tag }}"
+          } elseif ("${{ github.ref_type }}" -eq "tag") {
+            $tag = "${{ github.ref_name }}"
+          } else {
+            # On push to main/master: read <Version> from .csproj and release automatically if that version tag does not exist yet
+            [xml]$csproj = Get-Content "src/AutomatiskSportTV.App/AutomatiskSportTV.App.csproj"
+            $projVer = ($csproj.Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1).Trim()
+            $tag = "v$projVer"
+
+            $existing = gh release view "$tag" 2>$null
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "Release $tag finns redan — hoppar över release för denna commit. Öka <Version> i .csproj eller pusha en ny v*-tagg för att släppa en uppdatering."
+              "should_release=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+              exit 0
+            }
+          }
+
+          $cleanVersion = $tag.TrimStart('v', 'V')
+          if ($cleanVersion -notmatch '^\d+\.\d+\.\d+') { $cleanVersion = "1.0.0" }
+
+          "should_release=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "version=$cleanVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Setup .NET 10
+        if: steps.version.outputs.should_release == 'true'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore & Test
+        if: steps.version.outputs.should_release == 'true'
+        run: |
+          dotnet restore AutomatiskSportTV.sln
+          dotnet test tests/AutomatiskSportTV.Core.Tests/AutomatiskSportTV.Core.Tests.csproj -c Release --verbosity normal
+
+      - name: Publish portable self-contained Windows x64 package
+        if: steps.version.outputs.should_release == 'true'
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $repo = "${{ github.repository }}"
+
+          dotnet publish src/AutomatiskSportTV.App/AutomatiskSportTV.App.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:DebugType=none `
+            -p:DebugSymbols=false `
+            -p:Version=$version `
+            -p:GitHubRepository=$repo `
+            -o dist/MatchFlowTV
+
+          $ProgressPreference = 'SilentlyContinue'
+          Remove-Item dist/MatchFlowTV/*.xml -ErrorAction SilentlyContinue
+          Copy-Item README.md dist/MatchFlowTV/README.md
+          Copy-Item LICENSE dist/MatchFlowTV/LICENSE
+          Copy-Item NOTICE dist/MatchFlowTV/NOTICE
+
+          Compress-Archive -Path dist/MatchFlowTV/* -DestinationPath "dist/MatchFlowTV-win-x64.zip" -Force
+
+          $hash = (Get-FileHash "dist/MatchFlowTV-win-x64.zip" -Algorithm SHA256).Hash
+          "$hash  MatchFlowTV-win-x64.zip" | Out-File -FilePath "dist/SHA256SUMS.txt" -Encoding ascii
+
+      - name: Create GitHub Release
+        if: steps.version.outputs.should_release == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ steps.version.outputs.tag }}"
+          $notes = @"
+          ## MatchFlow TV ($tag) — Portable Windows x64
+
+          ### Installation på 30 sekunder
+          1. Ladda ner **MatchFlowTV-win-x64.zip** nedan.
+          2. Packa upp zip-filen i valfri mapp (t.ex. `C:\MatchFlowTV`).
+          3. Dubbelklicka på **MatchFlowTV.exe** — ingen .NET-installation krävs!
+
+          ### Automatiska uppdateringar
+          Om du redan kör MatchFlow TV laddas och installeras denna uppdatering automatiskt i bakgrunden (verifierad med SHA-256) så fort ingen match spelas – med alla dina inloggningar och inställningar bevarade.
+
+          > **Obs:** Vid första start kan Windows SmartScreen visa en varning för osignerade open source-appar — klicka på *Mer information → Kör ändå*.
+          "@
+          gh release create "$tag" `
+            dist/MatchFlowTV-win-x64.zip `
+            dist/SHA256SUMS.txt `
+            --title "MatchFlow TV $tag" `
+            --notes $notes

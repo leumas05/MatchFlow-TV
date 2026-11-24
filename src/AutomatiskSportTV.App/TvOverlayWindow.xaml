@@ -1,0 +1,411 @@
+<Window x:Class="AutomatiskSportTV.App.TvOverlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="TV Overlay"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        ResizeMode="NoResize"
+        KeyDown="Overlay_KeyDown">
+
+    <Grid>
+        <!-- Dim backdrop when modal panels (Guide / Ranking / Services / Help) are open -->
+        <Border x:Name="ModalBackdrop"
+                Background="#CC050912"
+                Visibility="Collapsed"
+                MouseDown="ModalBackdrop_MouseDown" />
+
+        <!-- 1. Top-Right Smart Auto-Switch Countdown Toast -->
+        <Border x:Name="SwitchToastPanel"
+                Visibility="Collapsed"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Top"
+                Margin="0,32,36,0"
+                Width="440"
+                Background="#EE111827"
+                BorderBrush="#22C55E"
+                BorderThickness="2"
+                CornerRadius="16"
+                Padding="20">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                    <Border Background="#16A34A" CornerRadius="6" Padding="8,3" Margin="0,0,10,0">
+                        <TextBlock Text="HÖGRE PRIORITERAD MATCH" Foreground="White" FontSize="11" FontWeight="Bold" />
+                    </Border>
+                    <TextBlock x:Name="ToastServiceText" Text="Viaplay" Foreground="#38BDF8" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" />
+                </StackPanel>
+
+                <TextBlock x:Name="ToastTitleText" Text="Arsenal - Chelsea" Foreground="#F8FAFC" FontSize="20" FontWeight="Bold" TextWrapping="Wrap" />
+                <TextBlock x:Name="ToastReasonText" Text="Lag: Arsenal • Premier League" Foreground="#94A3B8" FontSize="13" Margin="0,4,0,12" TextWrapping="Wrap" />
+                <TextBlock x:Name="ToastCountdownText" Text="Byter automatiskt om 15 s" Foreground="#22C55E" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,12" />
+
+                <StackPanel Orientation="Horizontal">
+                    <Button Content="Byt nu (Enter)" Style="{StaticResource TvAccentButtonStyle}" Margin="0,0,10,0" Click="AcceptSwitch_Click" />
+                    <Button Content="Stanna kvar (Esc)" Style="{StaticResource TvButtonStyle}" Click="DismissSwitch_Click" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- 2. Bottom Floating TV OSD Channel Bar -->
+        <Border x:Name="OsdBarPanel"
+                Visibility="Collapsed"
+                VerticalAlignment="Bottom"
+                Margin="36,0,36,28"
+                Background="#EA0B1120"
+                BorderBrush="#334155"
+                BorderThickness="1.5"
+                CornerRadius="18"
+                Padding="24,18"
+                MouseEnter="OsdBar_MouseEnter"
+                MouseLeave="OsdBar_MouseLeave">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Grid Grid.Row="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0">
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                            <Border x:Name="OsdServiceBadge" Background="#E11D48" CornerRadius="6" Padding="10,4" Margin="0,0,10,0">
+                                <TextBlock x:Name="OsdServiceText" Text="SVT PLAY" Foreground="White" FontSize="12" FontWeight="Bold" />
+                            </Border>
+                            <Border Background="#DC2626" CornerRadius="6" Padding="8,4" Margin="0,0,10,0">
+                                <TextBlock Text="● LIVE" Foreground="White" FontSize="12" FontWeight="Bold" />
+                            </Border>
+                            <Border x:Name="OsdPinnedBadge" Visibility="Collapsed" Background="#D97706" CornerRadius="6" Padding="8,4" Margin="0,0,10,0">
+                                <TextBlock Text="📌 LÅST" Foreground="White" FontSize="12" FontWeight="Bold" />
+                            </Border>
+                            <TextBlock x:Name="OsdSportLeagueText" Text="Fotboll • Allsvenskan" Foreground="#38BDF8" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        </StackPanel>
+
+                        <TextBlock x:Name="OsdTitleText" Text="Ingen aktiv sändning" Foreground="#F8FAFC" FontSize="24" FontWeight="Bold" TextTrimming="CharacterEllipsis" />
+                        <TextBlock x:Name="OsdScoreText" Text="Poäng: -" Foreground="#94A3B8" FontSize="13" Margin="0,3,0,0" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" VerticalAlignment="Top" HorizontalAlignment="Right">
+                        <TextBlock x:Name="OsdClockText" Text="12:30" Foreground="#F8FAFC" FontSize="22" FontWeight="Bold" HorizontalAlignment="Right" />
+                        <TextBlock x:Name="OsdTelemetryText" Text="Redo" Foreground="#22C55E" FontSize="13" HorizontalAlignment="Right" Margin="0,2,0,0" />
+                    </StackPanel>
+                </Grid>
+
+                <WrapPanel Grid.Row="1" Margin="0,14,0,0">
+                    <Button Content="◀ Föregående (B)" Style="{StaticResource TvButtonStyle}" Margin="0,0,8,6" Click="PrevChannel_Click" />
+                    <Button Content="▶ Nästa match (N)" Style="{StaticResource TvAccentButtonStyle}" Margin="0,0,8,6" Click="NextChannel_Click" />
+                    <Button Content="⏭ Hoppa över (S)" Style="{StaticResource TvButtonStyle}" Margin="0,0,8,6" Click="SkipChannel_Click" />
+                    <Button x:Name="OsdPinButton" Content="📌 Lås match (P)" Style="{StaticResource TvButtonStyle}" Margin="0,0,8,6" Click="PinChannel_Click" />
+                    <Button x:Name="OsdMuteButton" Content="🔊 Ljud (M)" Style="{StaticResource TvButtonStyle}" Margin="0,0,8,6" Click="ToggleMute_Click" />
+                    <Button x:Name="OsdTheaterButton" Content="🎬 Helbild (T)" Style="{StaticResource TvButtonStyle}" Margin="0,0,8,6" Click="ToggleTheater_Click" />
+                    <Button Content="📺 Sportguide (G)" Style="{StaticResource TvButtonStyle}" Margin="0,0,8,6" Click="OpenGuide_Click" />
+                    <Button Content="⭐ Rangordning (R)" Style="{StaticResource TvButtonStyle}" Margin="0,0,8,6" Click="OpenRanking_Click" />
+                    <Button Content="🔑 Tjänster (L)" Style="{StaticResource TvButtonStyle}" Margin="0,0,8,6" Click="OpenServices_Click" />
+                    <Button x:Name="OsdUpdateButton" Visibility="Collapsed" Content="⬆ Uppdatera nu" Style="{StaticResource TvAccentButtonStyle}" Margin="0,0,8,6" Click="InstallUpdateNow_Click" />
+                    <Button Content="⛶ Fullskärm (F11)" Style="{StaticResource TvButtonStyle}" Margin="0,0,8,6" Click="ToggleFullscreen_Click" />
+                    <Button Content="?" Style="{StaticResource TvButtonStyle}" Width="44" Margin="0,0,0,6" Click="OpenHelp_Click" ToolTip="Snabbkommandon (F1)" />
+                </WrapPanel>
+            </Grid>
+        </Border>
+
+        <!-- 3. Live Sports Guide Panel (G) -->
+        <Border x:Name="GuidePanel"
+                Visibility="Collapsed"
+                Margin="48"
+                Background="#F50F172A"
+                BorderBrush="#334155"
+                BorderThickness="1.5"
+                CornerRadius="20"
+                Padding="28">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <DockPanel Grid.Row="0" Margin="0,0,0,18">
+                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                        <Button x:Name="GuideScanNowButton" Content="⟳ Skanna alla tjänster nu" Style="{StaticResource TvAccentButtonStyle}" Margin="0,0,10,0" Click="ScanAllNow_Click" />
+                        <Button Content="Stäng (Esc)" Style="{StaticResource TvButtonStyle}" Click="CloseModals_Click" />
+                    </StackPanel>
+                    <StackPanel>
+                        <TextBlock Text="Live Sportguide — Sorterad efter din rangordning" Foreground="#F8FAFC" FontSize="26" FontWeight="Bold" />
+                        <TextBlock x:Name="GuideSummaryText" Text="0 pågående matcher • 0 kommande" Foreground="#94A3B8" FontSize="14" Margin="0,4,0,0" />
+                    </StackPanel>
+                </DockPanel>
+
+                <!-- Sport Filter Pills & Search -->
+                <DockPanel Grid.Row="1" Margin="0,0,0,16">
+                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
+                        <TextBlock Text="Sök:" Foreground="#94A3B8" FontSize="14" VerticalAlignment="Center" Margin="12,0,8,0" />
+                        <TextBox x:Name="GuideSearchBox"
+                                 Width="250"
+                                 Style="{StaticResource TvTextBoxStyle}"
+                                 TextChanged="GuideFilter_Changed" />
+                    </StackPanel>
+                    <WrapPanel x:Name="GuideSportFilters" VerticalAlignment="Center" />
+                </DockPanel>
+
+                <Grid Grid.Row="2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1.6*" />
+                        <ColumnDefinition Width="20" />
+                        <ColumnDefinition Width="1*" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Live Matches Column -->
+                    <Border Grid.Column="0" Background="#111827" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="14" Padding="16">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Top" Text="PÅGÅR LIVE JUST NU" Foreground="#22C55E" FontSize="13" FontWeight="Bold" Margin="0,0,0,10" />
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <StackPanel x:Name="GuideLiveList" />
+                            </ScrollViewer>
+                        </DockPanel>
+                    </Border>
+
+                    <!-- Upcoming Matches Column -->
+                    <Border Grid.Column="2" Background="#111827" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="14" Padding="16">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Top" Text="KOMMANDE (BÖRJAR SNART)" Foreground="#38BDF8" FontSize="13" FontWeight="Bold" Margin="0,0,0,10" />
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <StackPanel x:Name="GuideUpcomingList" />
+                            </ScrollViewer>
+                        </DockPanel>
+                    </Border>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <!-- 4. Ranking & Rules Studio Panel (R) -->
+        <Border x:Name="RankingPanel"
+                Visibility="Collapsed"
+                Margin="44"
+                Background="#F50F172A"
+                BorderBrush="#334155"
+                BorderThickness="1.5"
+                CornerRadius="20"
+                Padding="28">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <DockPanel Grid.Row="0" Margin="0,0,0,18">
+                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                        <Button Content="Spara &amp; Tillämpa" Style="{StaticResource TvAccentButtonStyle}" Margin="0,0,10,0" Click="SaveRanking_Click" />
+                        <Button Content="Stäng (Esc)" Style="{StaticResource TvButtonStyle}" Click="CloseModals_Click" />
+                    </StackPanel>
+                    <StackPanel>
+                        <TextBlock Text="Rangordning &amp; Auto-TV-regler" Foreground="#F8FAFC" FontSize="26" FontWeight="Bold" />
+                        <TextBlock Text="Ordningen styr vilken match appen väljer först. Lag väger tyngst, sedan liga, sedan sport." Foreground="#94A3B8" FontSize="14" Margin="0,4,0,0" />
+                    </StackPanel>
+                </DockPanel>
+
+                <Grid Grid.Row="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="16" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="16" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="16" />
+                        <ColumnDefinition Width="1.1*" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Column 1: Favorite Teams -->
+                    <Border Grid.Column="0" Background="#111827" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="14" Padding="14">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Top" Text="1. FAVORITLAG / UTÖVARE" Foreground="#22C55E" FontSize="13" FontWeight="Bold" Margin="0,0,0,8" />
+                            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                                <Button DockPanel.Dock="Right" Content="+" Style="{StaticResource TvAccentButtonStyle}" Padding="14,6" Margin="6,0,0,0" Click="AddTeam_Click" />
+                                <TextBox x:Name="AddTeamBox" Style="{StaticResource TvTextBoxStyle}" KeyDown="AddTeamBox_KeyDown" />
+                            </DockPanel>
+                            <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                                <Button Content="+ AIK" Style="{StaticResource TvButtonStyle}" Padding="8,4" FontSize="12" Margin="0,0,4,4" Click="QuickAddTeam_Click" Tag="AIK" />
+                                <Button Content="+ Arsenal" Style="{StaticResource TvButtonStyle}" Padding="8,4" FontSize="12" Margin="0,0,4,4" Click="QuickAddTeam_Click" Tag="Arsenal" />
+                                <Button Content="+ Liverpool" Style="{StaticResource TvButtonStyle}" Padding="8,4" FontSize="12" Margin="0,0,4,4" Click="QuickAddTeam_Click" Tag="Liverpool" />
+                                <Button Content="+ Frölunda" Style="{StaticResource TvButtonStyle}" Padding="8,4" FontSize="12" Margin="0,0,4,4" Click="QuickAddTeam_Click" Tag="Frölunda" />
+                            </WrapPanel>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <StackPanel x:Name="TeamsListPanel" />
+                            </ScrollViewer>
+                        </DockPanel>
+                    </Border>
+
+                    <!-- Column 2: Favorite Leagues -->
+                    <Border Grid.Column="2" Background="#111827" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="14" Padding="14">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Top" Text="2. LIGOR &amp; TURNERINGAR" Foreground="#38BDF8" FontSize="13" FontWeight="Bold" Margin="0,0,0,8" />
+                            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                                <Button DockPanel.Dock="Right" Content="+" Style="{StaticResource TvAccentButtonStyle}" Padding="14,6" Margin="6,0,0,0" Click="AddLeague_Click" />
+                                <TextBox x:Name="AddLeagueBox" Style="{StaticResource TvTextBoxStyle}" KeyDown="AddLeagueBox_KeyDown" />
+                            </DockPanel>
+                            <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                                <Button Content="+ Allsvenskan" Style="{StaticResource TvButtonStyle}" Padding="8,4" FontSize="12" Margin="0,0,4,4" Click="QuickAddLeague_Click" Tag="Allsvenskan" />
+                                <Button Content="+ SHL" Style="{StaticResource TvButtonStyle}" Padding="8,4" FontSize="12" Margin="0,0,4,4" Click="QuickAddLeague_Click" Tag="SHL" />
+                                <Button Content="+ Formel 1" Style="{StaticResource TvButtonStyle}" Padding="8,4" FontSize="12" Margin="0,0,4,4" Click="QuickAddLeague_Click" Tag="Formel 1" />
+                                <Button Content="+ NFL" Style="{StaticResource TvButtonStyle}" Padding="8,4" FontSize="12" Margin="0,0,4,4" Click="QuickAddLeague_Click" Tag="NFL" />
+                            </WrapPanel>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <StackPanel x:Name="LeaguesListPanel" />
+                            </ScrollViewer>
+                        </DockPanel>
+                    </Border>
+
+                    <!-- Column 3: Sports Order + Mute -->
+                    <Border Grid.Column="4" Background="#111827" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="14" Padding="14">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Top" Text="3. SPORTER (ORDNING &amp; DÖLJ)" Foreground="#F59E0B" FontSize="13" FontWeight="Bold" Margin="0,0,0,8" />
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <StackPanel x:Name="SportsListPanel" />
+                            </ScrollViewer>
+                        </DockPanel>
+                    </Border>
+
+                    <!-- Column 4: Automation Rules & Service Tie-Breakers -->
+                    <Border Grid.Column="6" Background="#111827" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="14" Padding="14">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel>
+                                <TextBlock Text="4. KANALBYTESREGLER" Foreground="#F8FAFC" FontSize="13" FontWeight="Bold" Margin="0,0,0,10" />
+                                <StackPanel x:Name="AutoSwitchModePanel" Margin="0,0,0,14" />
+
+                                <TextBlock Text="Skanningsintervall (sekunder)" Foreground="#94A3B8" FontSize="13" Margin="0,0,0,4" />
+                                <TextBox x:Name="ScanIntervalBox" Style="{StaticResource TvTextBoxStyle}" Margin="0,0,0,12" />
+
+                                <TextBlock Text="Blockerade ord (t.ex. repris, eftersnack)" Foreground="#94A3B8" FontSize="13" Margin="0,0,0,4" />
+                                <TextBox x:Name="BlockedKeywordsBox" Style="{StaticResource TvTextBoxStyle}" Margin="0,0,0,12" />
+
+                                <CheckBox x:Name="PreventSleepCheck" Content="Håll TV:n vaken under match" Foreground="#F8FAFC" FontSize="14" Margin="0,0,0,6" />
+                                <CheckBox x:Name="StartFullscreenCheck" Content="Starta alltid i fullskärm på TV:n" Foreground="#F8FAFC" FontSize="14" Margin="0,0,0,6" />
+                                <CheckBox x:Name="AutoTheaterModeCheck" Content="Automatisk helbild i videospelaren (T)" Foreground="#F8FAFC" FontSize="14" Margin="0,0,0,6" />
+                                <CheckBox x:Name="DeduplicateCheck" Content="Slå ihop dubbletter mellan tjänster" Foreground="#F8FAFC" FontSize="14" Margin="0,0,0,6" />
+                                <CheckBox x:Name="StartWithWindowsCheck" Content="Starta automatiskt med Windows" Foreground="#F8FAFC" FontSize="14" Margin="0,0,0,12" />
+
+                                <TextBlock Text="NATTLÄGE (TYSTA TIMMAR)" Foreground="#38BDF8" FontSize="12" FontWeight="Bold" Margin="0,0,0,6" />
+                                <CheckBox x:Name="EnableQuietHoursCheck" Content="Ingen auto-uppspelning nattetid" Foreground="#F8FAFC" FontSize="14" Margin="0,0,0,6" />
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                    <TextBlock Text="Från:" Foreground="#94A3B8" FontSize="13" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                    <TextBox x:Name="QuietStartBox" Width="74" Style="{StaticResource TvTextBoxStyle}" Padding="8,4" Margin="0,0,12,0" />
+                                    <TextBlock Text="Till:" Foreground="#94A3B8" FontSize="13" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                    <TextBox x:Name="QuietEndBox" Width="74" Style="{StaticResource TvTextBoxStyle}" Padding="8,4" />
+                                </StackPanel>
+
+                                <TextBlock Text="SKÄRMSLÄCKARE (NÄR INGEN SPORT VISAS)" Foreground="#38BDF8" FontSize="12" FontWeight="Bold" Margin="0,0,0,8" />
+                                <CheckBox x:Name="EnableScreensaverCheck" Content="Aktivera TV-skärmsläckare i standby" Foreground="#F8FAFC" FontSize="14" Margin="0,0,0,6" />
+                                <CheckBox x:Name="ScreensaverPureBlackCheck" Content="Extra mörkt OLED-läge (bara svag klocka)" Foreground="#F8FAFC" FontSize="14" Margin="0,0,0,6" />
+                                <CheckBox x:Name="AllowDisplaySleepIdleCheck" Content="Tillåt Windows att släcka TV:n vid tomgång" Foreground="#F8FAFC" FontSize="14" Margin="0,0,0,8" />
+                                <TextBlock Text="Tid innan skärmsläckare startar (sekunder)" Foreground="#94A3B8" FontSize="13" Margin="0,0,0,4" />
+                                <TextBox x:Name="ScreensaverDelayBox" Style="{StaticResource TvTextBoxStyle}" Margin="0,0,0,14" />
+
+                                <TextBlock Text="AUTOMATISKA UPPDATERINGAR (GITHUB)" Foreground="#38BDF8" FontSize="12" FontWeight="Bold" Margin="0,0,0,6" />
+                                <CheckBox x:Name="AutoCheckUpdatesCheck" Content="Sök automatiskt efter nya versioner" Foreground="#F8FAFC" FontSize="14" Margin="0,0,0,6" />
+                                <CheckBox x:Name="AutoInstallUpdatesCheck" Content="Installera automatiskt när ingen match spelas" Foreground="#F8FAFC" FontSize="14" Margin="0,0,0,8" />
+                                <TextBlock Text="GitHub-repo (t.ex. S4m-dev/MatchFlow-TV, tomt = inbyggt)" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,4" />
+                                <TextBox x:Name="UpdateRepoBox" Style="{StaticResource TvTextBoxStyle}" Margin="0,0,0,8" />
+                                <TextBlock x:Name="UpdateStatusText" Text="Version v1.0.0" Foreground="#94A3B8" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8" />
+                                <WrapPanel Margin="0,0,0,16">
+                                    <Button Content="⟳ Sök uppdatering" Style="{StaticResource TvButtonStyle}" Padding="10,6" FontSize="12" Margin="0,0,8,6" Click="CheckUpdatesNow_Click" />
+                                    <Button x:Name="RankingInstallUpdateButton" Visibility="Collapsed" Content="⬆ Installera &amp; starta om" Style="{StaticResource TvAccentButtonStyle}" Padding="10,6" FontSize="12" Margin="0,0,0,6" Click="InstallUpdateNow_Click" />
+                                </WrapPanel>
+
+                                <TextBlock Text="TJÄNST-PRIORITET (VID LIKA POÄNG)" Foreground="#38BDF8" FontSize="12" FontWeight="Bold" Margin="0,0,0,8" />
+                                <StackPanel x:Name="ServicePriorityPanel" />
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
+                </Grid>
+
+                <TextBlock Grid.Row="2" x:Name="RankingStatusText" Text="" Foreground="#22C55E" FontSize="14" Margin="0,12,0,0" />
+            </Grid>
+        </Border>
+
+        <!-- 5. Streaming Services & Login Hub Panel (L) -->
+        <Border x:Name="ServicesPanel"
+                Visibility="Collapsed"
+                Margin="48"
+                Background="#F50F172A"
+                BorderBrush="#334155"
+                BorderThickness="1.5"
+                CornerRadius="20"
+                Padding="28">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <DockPanel Grid.Row="0" Margin="0,0,0,18">
+                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                        <Button Content="⟳ Skanna alla nu" Style="{StaticResource TvAccentButtonStyle}" Margin="0,0,10,0" Click="ScanAllNow_Click" />
+                        <Button Content="Stäng (Esc)" Style="{StaticResource TvButtonStyle}" Click="CloseModals_Click" />
+                    </StackPanel>
+                    <StackPanel>
+                        <TextBlock Text="Streamingtjänster &amp; Inloggning" Foreground="#F8FAFC" FontSize="26" FontWeight="Bold" />
+                        <TextBlock Text="Logga in en gång per tjänst – kakor, profiler och DRM sparas lokalt i Windows Edge WebView2." Foreground="#94A3B8" FontSize="14" Margin="0,4,0,0" />
+                    </StackPanel>
+                </DockPanel>
+
+                <Grid Grid.Row="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1.4*" />
+                        <ColumnDefinition Width="20" />
+                        <ColumnDefinition Width="1*" />
+                    </Grid.ColumnDefinitions>
+
+                    <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="ServicesCardsPanel" />
+                    </ScrollViewer>
+
+                    <Border Grid.Column="2" Background="#111827" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="14" Padding="16">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Top" x:Name="ServiceDiagnosticTitle" Text="Skanner-diagnostik" Foreground="#38BDF8" FontSize="14" FontWeight="Bold" Margin="0,0,0,8" />
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <StackPanel x:Name="ServiceDiagnosticList" />
+                            </ScrollViewer>
+                        </DockPanel>
+                    </Border>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <!-- 6. Shortcuts & Remote Control Help Modal (H / F1) -->
+        <Border x:Name="HelpPanel"
+                Visibility="Collapsed"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Width="640"
+                Background="#F50F172A"
+                BorderBrush="#38BDF8"
+                BorderThickness="2"
+                CornerRadius="20"
+                Padding="28">
+            <StackPanel>
+                <DockPanel Margin="0,0,0,14">
+                    <Button DockPanel.Dock="Right" Content="Stäng (Esc)" Style="{StaticResource TvButtonStyle}" Click="CloseModals_Click" />
+                    <TextBlock Text="Fjärrkontroll &amp; Snabbkommandon" Foreground="#F8FAFC" FontSize="24" FontWeight="Bold" VerticalAlignment="Center" />
+                </DockPanel>
+                <TextBlock Foreground="#CBD5E1" FontSize="15" LineHeight="28" TextWrapping="Wrap">
+                    • <Bold>G / Tab</Bold> — Öppna Sportguiden (bläddra med <Bold>Upp/Ner</Bold> och välj med <Bold>Enter</Bold>)&#x0a;
+                    • <Bold>R</Bold> — Öppna Rangordning, Nattläge, Skärmsläckare &amp; Autostart&#x0a;
+                    • <Bold>L</Bold> — Streamingtjänster, Inloggning &amp; Volym per tjänst&#x0a;
+                    • <Bold>N / PageUp</Bold> — Nästa högst rankade match • <Bold>B / PageDown</Bold> — Föregående&#x0a;
+                    • <Bold>S</Bold> — Hoppa över denna match • <Bold>P</Bold> — Lås nuvarande match&#x0a;
+                    • <Bold>M</Bold> — Ljud av/på (Mute) • <Bold>T</Bold> — Växla helbild/sajtvy i spelaren&#x0a;
+                    • <Bold>I / Rör musen</Bold> — Visa TV-infomenyn • <Bold>Z</Bold> — Starta skärmsläckare&#x0a;
+                    • <Bold>F11</Bold> — Växla helskärmsläge • <Bold>Esc</Bold> — Stäng meny
+                </TextBlock>
+                <TextBlock Text="MatchFlow TV • Skapad av S4m.dev (https://www.s4m.dev/) • Apache-2.0"
+                           Foreground="#64748B"
+                           FontSize="12"
+                           Margin="0,14,0,0" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

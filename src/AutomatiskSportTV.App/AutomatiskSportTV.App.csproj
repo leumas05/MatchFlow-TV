@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>MatchFlowTV</AssemblyName>
+    <RootNamespace>AutomatiskSportTV.App</RootNamespace>
+    <Product>MatchFlow TV</Product>
+    <ApplicationTitle>MatchFlow TV</ApplicationTitle>
+    <Authors>S4m.dev</Authors>
+    <Company>S4m.dev</Company>
+    <Description>Automatisk sport-TV för Windows kopplad till TV via HDMI.</Description>
+    <Copyright>Copyright 2026 S4m.dev (https://www.s4m.dev/)</Copyright>
+    <PackageProjectUrl>https://www.s4m.dev/</PackageProjectUrl>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <Version>1.0.0</Version>
+    <GitHubRepository Condition="'$(GitHubRepository)' == ''"></GitHubRepository>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <AllowedReferenceRelatedFileExtensions>.none</AllowedReferenceRelatedFileExtensions>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>GitHubRepository</_Parameter1>
+      <_Parameter2>$(GitHubRepository)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\app.ico" />
+    <Resource Include="Assets\logo.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AutomatiskSportTV.Core\AutomatiskSportTV.Core.csproj" />
+  </ItemGroup>
+</Project>
