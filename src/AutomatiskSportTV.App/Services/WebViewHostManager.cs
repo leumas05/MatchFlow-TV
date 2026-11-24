@@ -66,7 +66,7 @@ public sealed class WebViewHostManager : IAsyncDisposable
         }
 
         _loginViewService = null;
-        _activeTargetVolume = Math.Clamp(volumePercent, 10, 100) / 100.0;
+        _activeTargetVolume = Math.Clamp(volumePercent, 0, 100) / 100.0;
         _theaterModeEnabled = theaterMode;
         _activeWatchUrl = watchUrl;
 
@@ -136,10 +136,32 @@ public sealed class WebViewHostManager : IAsyncDisposable
             return;
         }
 
-        _activeTargetVolume = Math.Clamp(volumePercent, 10, 100) / 100.0;
+        _activeTargetVolume = Math.Clamp(volumePercent, 0, 100) / 100.0;
         if (_playerViews.TryGetValue(serviceId, out var view) && view.CoreWebView2 is not null)
         {
+            var effectiveMuted = _isMuted || volumePercent <= 0;
+            view.CoreWebView2.IsMuted = effectiveMuted;
             var volStr = _activeTargetVolume.ToString("0.00", CultureInfo.InvariantCulture);
+            var mutedLiteral = effectiveMuted ? "true" : "false";
+            await view.CoreWebView2.ExecuteScriptAsync($"if (window.__astvSetVolume) window.__astvSetVolume({volStr}, {mutedLiteral});");
+        }
+    }
+
+    /// <summary>
+    /// Updates both volume and mute state on the currently active stream (used by the OSD volume slider).
+    /// </summary>
+    public async Task SetActiveVolumeAndMuteAsync(int volumePercent, bool muted)
+    {
+        _isMuted = muted || volumePercent <= 0;
+        if (volumePercent > 0)
+        {
+            _activeTargetVolume = Math.Clamp(volumePercent, 1, 100) / 100.0;
+        }
+        if (_activePlayerService is { } id && _playerViews.TryGetValue(id, out var view) && view.CoreWebView2 is not null)
+        {
+            view.CoreWebView2.IsMuted = _isMuted;
+            var effectiveVol = _isMuted ? 0.0 : _activeTargetVolume;
+            var volStr = effectiveVol.ToString("0.00", CultureInfo.InvariantCulture);
             var mutedLiteral = _isMuted ? "true" : "false";
             await view.CoreWebView2.ExecuteScriptAsync($"if (window.__astvSetVolume) window.__astvSetVolume({volStr}, {mutedLiteral});");
         }

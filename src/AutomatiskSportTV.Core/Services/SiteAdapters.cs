@@ -1053,7 +1053,7 @@ public static class SiteAdapters
         bool enableTheaterFill = true)
     {
         var serviceKey = serviceId.ToString();
-        var clampedVol = Math.Clamp(targetVolume, 0.05, 1.0).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+        var clampedVol = Math.Clamp(targetVolume, 0.0, 1.0).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
         var mutedLiteral = startMuted ? "true" : "false";
         var theaterLiteral = enableTheaterFill ? "true" : "false";
 
@@ -1160,7 +1160,7 @@ public static class SiteAdapters
   const applyAudio = (video) => {
     if (!video) return;
     try {
-      const desiredVol = Math.max(0.05, Math.min(1.0, Number(window.__astvTargetVolume ?? 1.0)));
+      const desiredVol = Math.max(0.0, Math.min(1.0, Number(window.__astvTargetVolume ?? 1.0)));
       if (Math.abs(video.volume - desiredVol) > 0.02) {
         video.volume = desiredVol;
       }

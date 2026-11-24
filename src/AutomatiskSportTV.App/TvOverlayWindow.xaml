@@ -100,7 +100,45 @@
                     <Button Content="▶ Nästa match (N)" Style="{StaticResource TvAccentButtonStyle}" Margin="0,0,8,6" Click="NextChannel_Click" />
                     <Button Content="⏭ Hoppa över (S)" Style="{StaticResource TvButtonStyle}" Margin="0,0,8,6" Click="SkipChannel_Click" />
                     <Button x:Name="OsdPinButton" Content="📌 Lås match (P)" Style="{StaticResource TvButtonStyle}" Margin="0,0,8,6" Click="PinChannel_Click" />
-                    <Button x:Name="OsdMuteButton" Content="🔊 Ljud (M)" Style="{StaticResource TvButtonStyle}" Margin="0,0,8,6" Click="ToggleMute_Click" />
+                    <Border Background="#1E293B"
+                            BorderBrush="#334155"
+                            BorderThickness="1.5"
+                            CornerRadius="10"
+                            Padding="8,4,12,4"
+                            Margin="0,0,8,6"
+                            PreviewMouseWheel="OsdVolume_PreviewMouseWheel">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button x:Name="OsdMuteButton"
+                                    Content="🔊"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Foreground="#F8FAFC"
+                                    FontSize="16"
+                                    Padding="4,2"
+                                    Cursor="Hand"
+                                    ToolTip="Ljud av/på (M)"
+                                    Click="ToggleMute_Click" />
+                            <Slider x:Name="OsdVolumeSlider"
+                                    Style="{StaticResource TvVolumeSliderStyle}"
+                                    Minimum="0"
+                                    Maximum="100"
+                                    Value="100"
+                                    Width="112"
+                                    Margin="6,0,8,0"
+                                    ToolTip="Dra eller skrolla för att justera volym (sparas per tjänst)"
+                                    ValueChanged="OsdVolumeSlider_ValueChanged"
+                                    PreviewMouseLeftButtonUp="OsdVolumeSlider_Commit"
+                                    LostMouseCapture="OsdVolumeSlider_Commit" />
+                            <TextBlock x:Name="OsdVolumePercentText"
+                                       Text="100%"
+                                       Foreground="#E2E8F0"
+                                       FontSize="13"
+                                       FontWeight="Bold"
+                                       Width="38"
+                                       TextAlignment="Right"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
                     <Button x:Name="OsdTheaterButton" Content="🎬 Helbild (T)" Style="{StaticResource TvButtonStyle}" Margin="0,0,8,6" Click="ToggleTheater_Click" />
                     <Button Content="📺 Sportguide (G)" Style="{StaticResource TvButtonStyle}" Margin="0,0,8,6" Click="OpenGuide_Click" />
                     <Button Content="⭐ Rangordning (R)" Style="{StaticResource TvButtonStyle}" Margin="0,0,8,6" Click="OpenRanking_Click" />

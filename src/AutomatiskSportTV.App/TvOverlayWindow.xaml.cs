@@ -37,6 +37,7 @@ public partial class TvOverlayWindow : Window
     private int _guideSelectedIndex;
     private bool _isMuted;
     private bool _isTheaterMode = true;
+    private bool _isUpdatingVolumeSlider;
 
     public TvOverlayWindow()
     {
@@ -78,6 +79,7 @@ public partial class TvOverlayWindow : Window
     public event Action? GoHomeRequested;
     public event Action? PinChannelRequested;
     public event Action? ToggleMuteRequested;
+    public event Action<int, bool>? ActiveVolumeSliderChanged;
     public event Action? ToggleTheaterModeRequested;
     public event Action? ToggleFullscreenRequested;
     public event Action<string>? SelectEventRequested;
@@ -330,7 +332,11 @@ public partial class TvOverlayWindow : Window
 
     private void UpdateOsd(RankedSportEvent? current, bool isPinned, PlaybackTelemetry? telemetry, string? watchdogNotice)
     {
-        OsdMuteButton.Content = _isMuted ? "🔇 Ljud på (M)" : "🔊 Ljud av (M)";
+        var activeSvc = current is not null
+            ? _services.FirstOrDefault(s => s.ServiceId == current.Event.ServiceId)
+            : null;
+        var displayedVol = _isMuted ? 0 : Math.Clamp(activeSvc?.VolumePercent ?? 100, 0, 100);
+        UpdateOsdVolumeControls(displayedVol, _isMuted);
         OsdTheaterButton.Content = _isTheaterMode ? "🖥 Sajtvy (T)" : "🎬 Helbild (T)";
 
         if (current is null)
@@ -1460,6 +1466,68 @@ public partial class TvOverlayWindow : Window
     private void NextChannel_Click(object sender, RoutedEventArgs e) => NextChannelRequested?.Invoke();
     private void SkipChannel_Click(object sender, RoutedEventArgs e) => SkipChannelRequested?.Invoke();
     private void PinChannel_Click(object sender, RoutedEventArgs e) => PinChannelRequested?.Invoke();
+    private void UpdateOsdVolumeControls(int volumePercent, bool isMuted)
+    {
+        var clamped = Math.Clamp(volumePercent, 0, 100);
+        var effectiveMuted = isMuted || clamped <= 0;
+        OsdMuteButton.Content = effectiveMuted
+            ? "🔇"
+            : clamped <= 35
+                ? "🔈"
+                : clamped <= 70
+                    ? "🔉"
+                    : "🔊";
+        OsdVolumePercentText.Text = effectiveMuted ? "0%" : $"{clamped}%";
+
+        _isUpdatingVolumeSlider = true;
+        try
+        {
+            var targetSliderVal = effectiveMuted ? 0 : clamped;
+            if (Math.Abs(OsdVolumeSlider.Value - targetSliderVal) >= 0.5)
+            {
+                OsdVolumeSlider.Value = targetSliderVal;
+            }
+        }
+        finally
+        {
+            _isUpdatingVolumeSlider = false;
+        }
+    }
+
+    private void OsdVolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_isUpdatingVolumeSlider || !IsLoaded)
+        {
+            return;
+        }
+
+        var vol = (int)Math.Round(e.NewValue);
+        _isMuted = vol <= 0;
+        UpdateOsdVolumeControls(vol, _isMuted);
+        ActiveVolumeSliderChanged?.Invoke(vol, false);
+    }
+
+    private void OsdVolumeSlider_Commit(object sender, MouseEventArgs e)
+    {
+        if (_isUpdatingVolumeSlider || !IsLoaded)
+        {
+            return;
+        }
+
+        var vol = (int)Math.Round(OsdVolumeSlider.Value);
+        ActiveVolumeSliderChanged?.Invoke(vol, true);
+    }
+
+    private void OsdVolume_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        var delta = e.Delta > 0 ? 5 : -5;
+        var next = Math.Clamp((int)Math.Round(OsdVolumeSlider.Value) + delta, 0, 100);
+        _isMuted = next <= 0;
+        UpdateOsdVolumeControls(next, _isMuted);
+        ActiveVolumeSliderChanged?.Invoke(next, true);
+        e.Handled = true;
+    }
+
     private void ToggleMute_Click(object sender, RoutedEventArgs e) => ToggleMuteRequested?.Invoke();
     private void ToggleTheater_Click(object sender, RoutedEventArgs e) => ToggleTheaterModeRequested?.Invoke();
     private void OpenGuide_Click(object sender, RoutedEventArgs e) => ShowSection(OverlaySection.Guide, _latestRanking);

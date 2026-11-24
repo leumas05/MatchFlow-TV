@@ -160,6 +160,29 @@ public partial class MainWindow : Window
             overlay.ShowSection(TvOverlayWindow.OverlaySection.OsdOnly, _config.RankingProfile);
         };
         overlay.ToggleMuteRequested += async () => { MarkUserActivity(); await ToggleMuteAsync(); };
+        overlay.ActiveVolumeSliderChanged += async (vol, commitSave) =>
+        {
+            MarkUserActivity();
+            _isMuted = vol <= 0;
+            if (_orchestrator.CurrentEvent is not null)
+            {
+                var activeSvc = _config.Services.FirstOrDefault(s => s.ServiceId == _orchestrator.CurrentEvent.Event.ServiceId);
+                if (activeSvc is not null && vol > 0)
+                {
+                    activeSvc.VolumePercent = Math.Clamp(vol, 1, 100);
+                }
+            }
+
+            if (_webViewManager is not null)
+            {
+                await _webViewManager.SetActiveVolumeAndMuteAsync(vol, _isMuted);
+            }
+
+            if (commitSave)
+            {
+                _store.Save(_config);
+            }
+        };
         overlay.ToggleTheaterModeRequested += async () => { MarkUserActivity(); await ToggleTheaterModeAsync(); };
         overlay.ToggleFullscreenRequested += () => { MarkUserActivity(); SetFullscreen(!_isFullscreen); };
         overlay.SelectEventRequested += id => { MarkUserActivity(); _orchestrator.SelectEvent(id); };
