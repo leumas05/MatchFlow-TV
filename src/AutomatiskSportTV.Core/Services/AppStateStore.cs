@@ -132,5 +132,7 @@ public sealed class AppStateStore
         {
             profile.ServicePriorities = RankingProfile.CreateDefault().ServicePriorities;
         }
+
+        profile.PenaltyRules ??= [];
     }
 }

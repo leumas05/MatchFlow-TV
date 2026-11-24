@@ -192,6 +192,7 @@ public partial class TvOverlayWindow : Window
     public void SyncUpdateStatus(Version currentVersion, string statusSummary, AppReleaseInfo? stagedRelease)
     {
         UpdateStatusText.Text = $"Version v{currentVersion} • {statusSummary}";
+        HelpVersionBadge.Text = $"v{currentVersion}";
         if (stagedRelease is not null)
         {
             OsdUpdateButton.Content = $"⬆ Uppdatera till {stagedRelease.TagName}";
@@ -464,9 +465,50 @@ public partial class TvOverlayWindow : Window
         }
         else
         {
-            for (var i = 0; i < filteredUpcoming.Count; i++)
+            var sv = System.Globalization.CultureInfo.GetCultureInfo("sv-SE");
+            DateTime? currentGroupDate = null;
+            var addedNoTimeHeader = false;
+            var idx = 0;
+
+            foreach (var item in filteredUpcoming)
             {
-                GuideUpcomingList.Children.Add(BuildGuideCard(filteredUpcoming[i], i + 1, isLive: false));
+                idx++;
+                if (item.Event.StartTime.HasValue)
+                {
+                    var localDate = item.Event.StartTime.Value.ToLocalTime().Date;
+                    if (currentGroupDate != localDate)
+                    {
+                        currentGroupDate = localDate;
+                        var dayHeader = localDate == DateTime.Today
+                            ? $"IDAG — {localDate.ToString("dddd d MMM", sv).ToUpperInvariant()}"
+                            : localDate == DateTime.Today.AddDays(1)
+                                ? $"IMORGON — {localDate.ToString("dddd d MMM", sv).ToUpperInvariant()}"
+                                : localDate.ToString("dddd d MMM", sv).ToUpperInvariant();
+
+                        GuideUpcomingList.Children.Add(new TextBlock
+                        {
+                            Text = dayHeader,
+                            Foreground = new SolidColorBrush(Color.FromRgb(56, 189, 248)),
+                            FontSize = 11,
+                            FontWeight = FontWeights.Bold,
+                            Margin = new Thickness(2, idx == 1 ? 0 : 12, 0, 6)
+                        });
+                    }
+                }
+                else if (!addedNoTimeHeader)
+                {
+                    addedNoTimeHeader = true;
+                    GuideUpcomingList.Children.Add(new TextBlock
+                    {
+                        Text = "UTAN STARTTID",
+                        Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
+                        FontSize = 11,
+                        FontWeight = FontWeights.Bold,
+                        Margin = new Thickness(2, idx == 1 ? 0 : 12, 0, 6)
+                    });
+                }
+
+                GuideUpcomingList.Children.Add(BuildGuideCard(item, idx, isLive: false));
             }
         }
 
@@ -528,14 +570,38 @@ public partial class TvOverlayWindow : Window
 
         var info = new StackPanel();
         var topLine = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
-        topLine.Children.Add(new TextBlock
+        if (isLive)
         {
-            Text = $"#{rank}",
-            Foreground = new SolidColorBrush(Color.FromRgb(34, 197, 94)),
-            FontWeight = FontWeights.Bold,
-            FontSize = 13,
-            Margin = new Thickness(0, 0, 8, 0)
-        });
+            topLine.Children.Add(new TextBlock
+            {
+                Text = $"#{rank}",
+                Foreground = new SolidColorBrush(Color.FromRgb(34, 197, 94)),
+                FontWeight = FontWeights.Bold,
+                FontSize = 13,
+                Margin = new Thickness(0, 0, 8, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            });
+        }
+        else if (item.Event.StartTime.HasValue)
+        {
+            var localStart = item.Event.StartTime.Value.ToLocalTime();
+            topLine.Children.Add(new Border
+            {
+                Background = new SolidColorBrush(Color.FromRgb(30, 41, 59)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(56, 189, 248)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(5),
+                Padding = new Thickness(7, 2, 7, 2),
+                Margin = new Thickness(0, 0, 8, 0),
+                Child = new TextBlock
+                {
+                    Text = localStart.ToString("HH:mm"),
+                    Foreground = new SolidColorBrush(Color.FromRgb(224, 242, 254)),
+                    FontSize = 11,
+                    FontWeight = FontWeights.Bold
+                }
+            });
+        }
         topLine.Children.Add(new Border
         {
             Background = new SolidColorBrush(svcColor),
@@ -562,19 +628,10 @@ public partial class TvOverlayWindow : Window
             FontWeight = FontWeights.Bold,
             TextWrapping = TextWrapping.Wrap
         });
-        var upcomingTimeLabel = "Kommande";
-        if (item.Event.StartTime.HasValue)
-        {
-            var localStart = item.Event.StartTime.Value.ToLocalTime();
-            var sv = System.Globalization.CultureInfo.GetCultureInfo("sv-SE");
-            upcomingTimeLabel = localStart.Date == DateTime.Today
-                ? localStart.ToString("HH:mm", sv)
-                : localStart.ToString("ddd HH:mm", sv);
-        }
 
         info.Children.Add(new TextBlock
         {
-            Text = isLive ? $"Poäng {item.Score:N0} • {item.ScoreBreakdown}" : $"{upcomingTimeLabel} • {item.ScoreBreakdown}",
+            Text = $"Poäng {item.Score:N0} • {item.ScoreBreakdown}",
             Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
             FontSize = 12,
             Margin = new Thickness(0, 3, 0, 0),
@@ -619,6 +676,7 @@ public partial class TvOverlayWindow : Window
             MutedSports = [.. source.MutedSports],
             ServicePriorities = [.. source.ServicePriorities],
             BlockedKeywords = [.. source.BlockedKeywords],
+            PenaltyRules = (source.PenaltyRules ?? []).Select(p => new PenaltyRule { Term = p.Term, PenaltyPoints = p.PenaltyPoints }).ToList(),
             AutoSwitchMode = source.AutoSwitchMode,
             AutoSwitchCountdownSeconds = source.AutoSwitchCountdownSeconds,
             ScanIntervalSeconds = source.ScanIntervalSeconds,
@@ -664,10 +722,123 @@ public partial class TvOverlayWindow : Window
     private void RenderRankingLists()
     {
         RenderReorderableStrings(TeamsListPanel, _editingRanking.FavoriteTeams);
+        RenderPenaltiesList();
         RenderReorderableStrings(LeaguesListPanel, _editingRanking.FavoriteLeagues);
         RenderSportsOrder();
         RenderAutoSwitchModes();
         RenderServicePriorities();
+    }
+
+    private void RenderPenaltiesList()
+    {
+        PenaltiesListPanel.Children.Clear();
+        if (_editingRanking.PenaltyRules.Count == 0)
+        {
+            PenaltiesListPanel.Children.Add(new TextBlock
+            {
+                Text = "Inga minusregler ännu. Lägg till ord, lag eller ligor ovan (t.ex. studion -1500).",
+                Foreground = new SolidColorBrush(Color.FromRgb(100, 116, 139)),
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(2, 4, 2, 0)
+            });
+            return;
+        }
+
+        for (var i = 0; i < _editingRanking.PenaltyRules.Count; i++)
+        {
+            var idx = i;
+            var rule = _editingRanking.PenaltyRules[idx];
+            var normalizedPenalty = -Math.Clamp(Math.Abs(rule.PenaltyPoints), 50, 20_000);
+            rule.PenaltyPoints = normalizedPenalty;
+
+            var border = new Border
+            {
+                Background = new SolidColorBrush(Color.FromRgb(38, 22, 28)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(127, 29, 29)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(10, 5, 8, 5),
+                Margin = new Thickness(0, 0, 0, 6)
+            };
+
+            var dock = new DockPanel();
+            var controls = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            DockPanel.SetDock(controls, Dock.Right);
+
+            var morePenaltyBtn = new Button
+            {
+                Content = "−",
+                Style = (Style)FindResource("TvButtonStyle"),
+                Padding = new Thickness(7, 2, 7, 2),
+                FontSize = 12,
+                ToolTip = "Ge mer minuspoäng (-250)"
+            };
+            morePenaltyBtn.Click += (_, _) =>
+            {
+                rule.PenaltyPoints = -Math.Clamp(Math.Abs(rule.PenaltyPoints) + 250, 50, 20_000);
+                RenderPenaltiesList();
+            };
+
+            var ptsBadge = new TextBlock
+            {
+                Text = $"{rule.PenaltyPoints}",
+                Foreground = new SolidColorBrush(Color.FromRgb(248, 113, 113)),
+                FontSize = 12,
+                FontWeight = FontWeights.Bold,
+                MinWidth = 48,
+                TextAlignment = TextAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(4, 0, 4, 0)
+            };
+
+            var lessPenaltyBtn = new Button
+            {
+                Content = "+",
+                Style = (Style)FindResource("TvButtonStyle"),
+                Padding = new Thickness(7, 2, 7, 2),
+                FontSize = 12,
+                ToolTip = "Minska minuspoäng (+250)"
+            };
+            lessPenaltyBtn.Click += (_, _) =>
+            {
+                rule.PenaltyPoints = -Math.Clamp(Math.Abs(rule.PenaltyPoints) - 250, 50, 20_000);
+                RenderPenaltiesList();
+            };
+
+            var delBtn = new Button
+            {
+                Content = "✕",
+                Style = (Style)FindResource("TvButtonStyle"),
+                Padding = new Thickness(7, 2, 7, 2),
+                FontSize = 11,
+                Margin = new Thickness(4, 0, 0, 0)
+            };
+            delBtn.Click += (_, _) =>
+            {
+                _editingRanking.PenaltyRules.RemoveAt(idx);
+                RenderPenaltiesList();
+            };
+
+            controls.Children.Add(morePenaltyBtn);
+            controls.Children.Add(ptsBadge);
+            controls.Children.Add(lessPenaltyBtn);
+            controls.Children.Add(delBtn);
+
+            dock.Children.Add(controls);
+            dock.Children.Add(new TextBlock
+            {
+                Text = rule.Term,
+                Foreground = Brushes.White,
+                FontSize = 13,
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis
+            });
+
+            border.Child = dock;
+            PenaltiesListPanel.Children.Add(border);
+        }
     }
 
     private void RenderReorderableStrings(Panel host, List<string> items)
@@ -1106,6 +1277,31 @@ public partial class TvOverlayWindow : Window
         }
     }
 
+    private void AddPenaltyToEditor(string rawTerm, int rawPoints)
+    {
+        var term = rawTerm.Trim();
+        if (term.Length < 2)
+        {
+            return;
+        }
+
+        var normalizedPoints = -Math.Clamp(Math.Abs(rawPoints == 0 ? 1000 : rawPoints), 50, 20_000);
+        var existing = _editingRanking.PenaltyRules.FirstOrDefault(p => p.Term.Equals(term, StringComparison.OrdinalIgnoreCase));
+        if (existing is not null)
+        {
+            existing.PenaltyPoints = normalizedPoints;
+        }
+        else
+        {
+            _editingRanking.PenaltyRules.Insert(0, new PenaltyRule
+            {
+                Term = term,
+                PenaltyPoints = normalizedPoints
+            });
+        }
+        RenderPenaltiesList();
+    }
+
     // Event handlers
     private void Overlay_KeyDown(object sender, KeyEventArgs e)
     {
@@ -1266,6 +1462,54 @@ public partial class TvOverlayWindow : Window
         if (sender is Button b && b.Tag is string league)
         {
             AddLeagueToEditor(league);
+        }
+    }
+
+    private void AddPenalty_Click(object sender, RoutedEventArgs e)
+    {
+        var pts = int.TryParse((AddPenaltyPointsBox.Text ?? string.Empty).Replace(" ", ""), out var parsed) ? parsed : -1000;
+        AddPenaltyToEditor(AddPenaltyTermBox.Text, pts);
+        AddPenaltyTermBox.Clear();
+    }
+
+    private void AddPenaltyBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            var pts = int.TryParse((AddPenaltyPointsBox.Text ?? string.Empty).Replace(" ", ""), out var parsed) ? parsed : -1000;
+            AddPenaltyToEditor(AddPenaltyTermBox.Text, pts);
+            AddPenaltyTermBox.Clear();
+            e.Handled = true;
+        }
+    }
+
+    private void QuickAddPenalty_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button b && b.Tag is string tag)
+        {
+            var parts = tag.Split('|');
+            var term = parts[0];
+            var pts = parts.Length > 1 && int.TryParse(parts[1], out var parsed) ? parsed : -1000;
+            AddPenaltyToEditor(term, pts);
+        }
+    }
+
+    private void OpenExternalLink_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button b && b.Tag is string url && UrlSecurityGuard.IsSafeHttpsUrl(url))
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = url,
+                    UseShellExecute = true
+                });
+            }
+            catch
+            {
+                // Ignore if default browser cannot be opened
+            }
         }
     }
 

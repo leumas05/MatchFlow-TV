@@ -46,7 +46,7 @@
 
 ## Funktioner
 
-- **Smart rangordning:** Lag väger tyngst → Ligor → Sporter → Tjänst-prioritet, med dubblettfilter om samma match sänds på två tjänster samtidigt.
+- **Smart rangordning & minuspoäng:** Lag väger tyngst → Ligor → Sporter → Tjänst-prioritet, med egna minuspoäng för att nedprioritera t.ex. studioprogram, kval eller specifika ligor/lag utan att dölja dem, samt dubblettfilter mellan tjänster.
 - **Riktig helbild i spelaren (`T`):** Sträcker aktiv videospelare kant-till-kant så att sajternas menyer och sidofält försvinner – med hårdvaru-DRM (PlayReady/Widevine) via Edge WebView2.
 - **Kontinuerlig sport-TV:** Byter automatiskt vidare när nuvarande sändning tar slut och visar diskret 15-sekunders notis om en högre prioriterad toppmatch drar igång.
 - **Watchdog & nätverksåterhämtning:** Laddar automatiskt om strömmen om bilden fryser i buffring eller om nätverket tappas tillfälligt – och byter vidare om strömmen inte svarar.

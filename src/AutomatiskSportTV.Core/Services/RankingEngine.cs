@@ -50,7 +50,7 @@ public sealed class RankingEngine
         RankingProfile profile,
         IReadOnlySet<string>? skippedEventIds)
     {
-        var searchable = $"{evt.Title} {evt.RawSubtitle} {evt.League} {evt.Sport} {string.Join(' ', evt.Teams)}";
+        var searchable = $"{evt.Title} {evt.RawSubtitle} {evt.League} {evt.Sport} {evt.ServiceName} {string.Join(' ', evt.Teams)}";
         var reasons = new List<string>();
         var blocked = false;
 
@@ -179,6 +179,26 @@ public sealed class RankingEngine
                 score += pts;
                 reasons.Add($"{evt.ServiceName} (+{pts})");
                 break;
+            }
+        }
+
+        // 5. Custom negative point penalties (deprioritize without completely blocking)
+        if (profile.PenaltyRules is not null)
+        {
+            foreach (var rule in profile.PenaltyRules)
+            {
+                if (string.IsNullOrWhiteSpace(rule.Term) || rule.PenaltyPoints == 0)
+                {
+                    continue;
+                }
+
+                var term = rule.Term.Trim();
+                if (MatchesWithAliases(searchable, term))
+                {
+                    var penalty = -Math.Clamp(Math.Abs(rule.PenaltyPoints), 50, 20_000);
+                    score += penalty;
+                    reasons.Add($"Minus: {term} ({penalty})");
+                }
             }
         }
 

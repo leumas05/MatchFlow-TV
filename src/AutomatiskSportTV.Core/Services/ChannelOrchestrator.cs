@@ -50,7 +50,13 @@ public sealed class ChannelOrchestrator
 
         var ranked = _rankingEngine.Rank(allEvents, profile, _skippedEventIds);
         LiveEvents = ranked.Where(r => r.Event.Status == EventStatus.Live && !r.IsBlockedOrMuted).ToList();
-        UpcomingEvents = ranked.Where(r => r.Event.Status == EventStatus.Upcoming && !r.IsBlockedOrMuted).ToList();
+        UpcomingEvents = ranked
+            .Where(r => r.Event.Status == EventStatus.Upcoming && !r.IsBlockedOrMuted)
+            .OrderBy(r => r.Event.StartTime.HasValue ? 0 : 1)
+            .ThenBy(r => r.Event.StartTime ?? DateTimeOffset.MaxValue)
+            .ThenByDescending(r => r.Score)
+            .ThenBy(r => r.Event.Title, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
         if (quietHoursActive && !_manualQuietOverride)
         {

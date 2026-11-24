@@ -79,4 +79,28 @@ public class ChannelOrchestratorTests
         orchestrator.SwitchPrevious();
         Assert.Equal(firstId, orchestrator.CurrentEvent?.Event.Id);
     }
+
+    [Fact]
+    public void UpdateCatalog_SortsUpcomingChronologicallyAndBreaksSameTimeTiesByScore()
+    {
+        var profile = RankingProfile.CreateDefault();
+        profile.FavoriteTeams = ["Sverige", "Arsenal"];
+        profile.FavoriteLeagues = ["Champions League"];
+
+        var orchestrator = new ChannelOrchestrator();
+        var events = new[]
+        {
+            new SportEvent { Id = "thu-swe", ServiceId = StreamingServiceId.SvtPlay, ServiceName = "SVT Play", Title = "Handboll: Sverige - Island", StartTime = new DateTimeOffset(2026, 11, 26, 18, 5, 0, TimeSpan.FromHours(1)), Status = EventStatus.Upcoming },
+            new SportEvent { Id = "today-como", ServiceId = StreamingServiceId.Viaplay, ServiceName = "Viaplay", Title = "Como - AEK Aten", League = "Champions League", Sport = "Fotboll", StartTime = new DateTimeOffset(2026, 11, 24, 20, 50, 0, TimeSpan.FromHours(1)), Status = EventStatus.Upcoming },
+            new SportEvent { Id = "today-ars", ServiceId = StreamingServiceId.Viaplay, ServiceName = "Viaplay", Title = "Arsenal - Dortmund", League = "Champions League", Sport = "Fotboll", StartTime = new DateTimeOffset(2026, 11, 24, 20, 50, 0, TimeSpan.FromHours(1)), Status = EventStatus.Upcoming },
+            new SportEvent { Id = "today-early", ServiceId = StreamingServiceId.Viaplay, ServiceName = "Viaplay", Title = "CL-studion: Galatasaray - Aston Villa", League = "Champions League", Sport = "Fotboll", StartTime = new DateTimeOffset(2026, 11, 24, 18, 30, 0, TimeSpan.FromHours(1)), Status = EventStatus.Upcoming },
+            new SportEvent { Id = "no-time", ServiceId = StreamingServiceId.DisneyPlus, ServiceName = "Disney+", Title = "Belmont vs. Akron", StartTime = null, Status = EventStatus.Upcoming }
+        };
+
+        orchestrator.UpdateCatalog(events, profile);
+
+        Assert.Equal(
+            ["today-early", "today-ars", "today-como", "thu-swe", "no-time"],
+            orchestrator.UpcomingEvents.Select(u => u.Event.Id).ToArray());
+    }
 }

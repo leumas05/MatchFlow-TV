@@ -879,9 +879,7 @@ public partial class MainWindow : Window
         var nextUpcoming = _orchestrator.UpcomingEvents.FirstOrDefault();
         if (nextUpcoming is not null)
         {
-            var timeText = nextUpcoming.Event.StartTime.HasValue
-                ? $"kl. {nextUpcoming.Event.StartTime.Value.ToLocalTime():HH:mm}"
-                : "kommande";
+            var timeText = FormatUpcomingDateTime(nextUpcoming.Event.StartTime, svCulture);
             ScreensaverNextMatchText.Text = $"Nästa: {nextUpcoming.Event.Title} ({nextUpcoming.Event.ServiceName} • {timeText})";
         }
         else
@@ -995,6 +993,7 @@ public partial class MainWindow : Window
         StandbyUpcomingList.Children.Clear();
         if (_orchestrator.UpcomingEvents.Count > 0)
         {
+            var svCulture = CultureInfo.GetCultureInfo("sv-SE");
             StandbyUpcomingHeader.Visibility = Visibility.Visible;
             foreach (var item in _orchestrator.UpcomingEvents.Take(8))
             {
@@ -1007,10 +1006,12 @@ public partial class MainWindow : Window
                     Padding = new Thickness(14, 10, 14, 10),
                     Margin = new Thickness(0, 0, 0, 8)
                 };
+                var timeTag = item.Event.StartTime.HasValue
+                    ? $"  ({FormatUpcomingDateTime(item.Event.StartTime, svCulture)})"
+                    : string.Empty;
                 var text = new TextBlock
                 {
-                    Text = $"{item.Event.ServiceName}  •  {item.Event.Sport}  •  {item.Event.Title}" +
-                           (item.Event.StartTime.HasValue ? $"  ({item.Event.StartTime.Value.ToLocalTime():HH:mm})" : ""),
+                    Text = $"{item.Event.ServiceName}  •  {item.Event.Sport}  •  {item.Event.Title}{timeTag}",
                     Foreground = Brushes.White,
                     FontSize = 14
                 };
@@ -1022,6 +1023,25 @@ public partial class MainWindow : Window
         {
             StandbyUpcomingHeader.Visibility = Visibility.Collapsed;
         }
+    }
+
+    private static string FormatUpcomingDateTime(DateTimeOffset? startTime, CultureInfo svCulture)
+    {
+        if (!startTime.HasValue)
+        {
+            return "kommande";
+        }
+
+        var local = startTime.Value.ToLocalTime();
+        if (local.Date == DateTime.Today)
+        {
+            return $"idag kl. {local:HH:mm}";
+        }
+        if (local.Date == DateTime.Today.AddDays(1))
+        {
+            return $"imorgon kl. {local:HH:mm}";
+        }
+        return local.ToString("ddd d MMM HH:mm", svCulture);
     }
 
     private void CursorWatchTimer_Tick(object? sender, EventArgs e)

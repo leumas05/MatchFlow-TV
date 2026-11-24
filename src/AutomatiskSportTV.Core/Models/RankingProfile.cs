@@ -1,7 +1,17 @@
 namespace AutomatiskSportTV.Core.Models;
 
 /// <summary>
-/// User preferences controlling how sports, leagues, teams, services, screensaver, and quiet hours behave.
+/// A user-defined negative point adjustment applied when a broadcast matches a specific term
+/// (e.g. "studio", "kval", "Youth League", "damer", or a team/league/sport/service).
+/// </summary>
+public sealed class PenaltyRule
+{
+    public string Term { get; set; } = string.Empty;
+    public int PenaltyPoints { get; set; } = -1000;
+}
+
+/// <summary>
+/// User preferences controlling how sports, leagues, teams, penalties, services, screensaver, and quiet hours behave.
 /// </summary>
 public sealed class RankingProfile
 {
@@ -22,6 +32,9 @@ public sealed class RankingProfile
 
     /// <summary>Keywords that exclude unwanted broadcasts (e.g. "Studio", "Höjdpunkter", "Repris").</summary>
     public List<string> BlockedKeywords { get; set; } = [];
+
+    /// <summary>Custom negative point rules that deprioritize matching broadcasts without hiding them.</summary>
+    public List<PenaltyRule> PenaltyRules { get; set; } = [];
 
     public AutoSwitchMode AutoSwitchMode { get; set; } = AutoSwitchMode.SmartToastWithCountdown;
     public int AutoSwitchCountdownSeconds { get; set; } = 15;
