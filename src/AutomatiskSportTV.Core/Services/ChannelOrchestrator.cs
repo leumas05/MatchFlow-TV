@@ -62,10 +62,28 @@ public sealed class ChannelOrchestrator
     public event Action<RankedSportEvent, string>? ReturnedFromBreak;
     public event Action? CatalogUpdated;
 
+    public IReadOnlyDictionary<string, MatchLiveStatus> LiveStatuses => _liveStatuses;
+
     public MatchLiveStatus? GetMatchStatus(string? eventId) =>
         !string.IsNullOrWhiteSpace(eventId) && _liveStatuses.TryGetValue(eventId, out var status)
             ? status
             : null;
+
+    /// <summary>
+    /// Seeds known live match phases/scores before UpdateCatalog runs so already-finished or paused
+    /// broadcasts are never auto-selected on startup or after a scan.
+    /// </summary>
+    public void PreloadMatchStatuses(IReadOnlyDictionary<string, MatchLiveStatus> statuses)
+    {
+        foreach (var (eventId, status) in statuses)
+        {
+            if (!string.IsNullOrWhiteSpace(eventId) && status is not null)
+            {
+                _liveStatuses[eventId] = status;
+        LiveEvents = SortLiveEventsByPlayability(LiveEvents);
+            }
+        }
+    }
 
     /// <summary>
     /// Updates the full catalog of discovered events, re-ranks them, and evaluates auto-switch and quiet-hour rules.
@@ -82,11 +100,15 @@ public sealed class ChannelOrchestrator
         }
 
         var ranked = _rankingEngine.Rank(allEvents, profile, _skippedEventIds, services);
-        LiveEvents = ranked
-            .Where(r => r.Event.Status == EventStatus.Live && !r.IsBlockedOrMuted && !_endedEventIds.Contains(r.Event.Id))
-            .ToList();
+        var upcomingCutoff = DateTimeOffset.Now.AddMinutes(-30);
+
+        LiveEvents = SortLiveEventsByPlayability(
+            ranked.Where(r => r.Event.Status == EventStatus.Live && !r.IsBlockedOrMuted && !_endedEventIds.Contains(r.Event.Id)));
+
         UpcomingEvents = ranked
-            .Where(r => r.Event.Status == EventStatus.Upcoming && !r.IsBlockedOrMuted)
+            .Where(r => r.Event.Status == EventStatus.Upcoming &&
+                        !r.IsBlockedOrMuted &&
+                        (!r.Event.StartTime.HasValue || r.Event.StartTime.Value >= upcomingCutoff))
             .OrderBy(r => r.Event.StartTime.HasValue ? 0 : 1)
             .ThenBy(r => r.Event.StartTime ?? DateTimeOffset.MaxValue)
             .ThenByDescending(r => r.Score)
@@ -106,7 +128,7 @@ public sealed class ChannelOrchestrator
             return;
         }
 
-        var nextAuto = LiveEvents.FirstOrDefault(r => !r.IsSkipped);
+        var nextAuto = FindBestAutoPlayCandidate();
 
         // Refresh CurrentEvent metadata/score if it is still in LiveEvents
         if (CurrentEvent is not null)
@@ -119,7 +141,7 @@ public sealed class ChannelOrchestrator
             }
             else if (nextAuto is not null)
             {
-                // Current event dropped off live list -> advance to best available non-skipped live match
+                // Current event dropped off live list -> advance to best available actively playing match
                 SwitchToInternal(nextAuto, recordHistory: false);
             }
             else
@@ -133,6 +155,19 @@ public sealed class ChannelOrchestrator
         else if (nextAuto is not null)
         {
             SwitchToInternal(nextAuto, recordHistory: false);
+        }
+        else if (profile.EnableSmartBreakSwitching && PausedPrimaryEvent is null)
+        {
+            // If all remaining live matches are currently in halftime/break (none Finished, none InPlay),
+            // track the top halftime match so we auto-start as soon as the next half/period kicks off!
+            var topHalftime = LiveEvents.FirstOrDefault(r =>
+                !r.IsSkipped &&
+                _liveStatuses.TryGetValue(r.Event.Id, out var st) &&
+                st.Phase == MatchPlayPhase.HalftimeOrBreak);
+            if (topHalftime is not null)
+            {
+                PausedPrimaryEvent = topHalftime;
+            }
         }
 
         CatalogUpdated?.Invoke();
@@ -163,7 +198,9 @@ public sealed class ChannelOrchestrator
         _isHomePaused = false;
         _manualQuietOverride = true;
 
-        var target = LiveEvents.FirstOrDefault(r => !r.IsSkipped) ?? LiveEvents.FirstOrDefault();
+        var target = FindBestAutoPlayCandidate()
+            ?? LiveEvents.FirstOrDefault(r => !r.IsSkipped && !IsEventFinished(r.Event.Id))
+            ?? LiveEvents.FirstOrDefault();
         if (target is null)
         {
             CatalogUpdated?.Invoke();
@@ -374,6 +411,7 @@ public sealed class ChannelOrchestrator
         }
 
         _liveStatuses[eventId] = status;
+        LiveEvents = SortLiveEventsByPlayability(LiveEvents);
 
         // 1. Check if a temporarily paused primary match just resumed play -> switch right back!
         if (PausedPrimaryEvent is not null &&
@@ -560,29 +598,52 @@ public sealed class ChannelOrchestrator
         CatalogUpdated?.Invoke();
     }
 
+    private bool IsEventFinished(string eventId) =>
+        _liveStatuses.TryGetValue(eventId, out var st) && st.Phase == MatchPlayPhase.Finished;
+
+    private bool IsEventInBreakOrFinished(string eventId) =>
+        _liveStatuses.TryGetValue(eventId, out var st) &&
+        st.Phase is MatchPlayPhase.HalftimeOrBreak or MatchPlayPhase.Finished;
+
+    private int GetPlayabilityRank(RankedSportEvent r)
+    {
+        if (r.IsSkipped) return 3;
+        if (_liveStatuses.TryGetValue(r.Event.Id, out var st))
+        {
+            return st.Phase switch
+            {
+                MatchPlayPhase.Finished => 2,
+                MatchPlayPhase.HalftimeOrBreak => 1,
+                _ => 0
+            };
+        }
+        return 0;
+    }
+
+    private List<RankedSportEvent> SortLiveEventsByPlayability(IEnumerable<RankedSportEvent> source) =>
+        source
+            .OrderBy(GetPlayabilityRank)
+            .ThenByDescending(r => r.Score)
+            .ThenBy(r => r.Event.StartTime ?? DateTimeOffset.MaxValue)
+            .ThenBy(r => r.Event.Title, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private RankedSportEvent? FindBestAutoPlayCandidate() =>
+        LiveEvents.FirstOrDefault(r => !r.IsSkipped && !IsEventInBreakOrFinished(r.Event.Id));
+
     private RankedSportEvent? FindAlternateLiveCandidate(string excludeEventId)
     {
-        // Prefer an unskipped live match that is NOT itself known to be in a break or finished
-        var activelyPlaying = LiveEvents.FirstOrDefault(r =>
-            !r.IsSkipped &&
-            !r.Event.Id.Equals(excludeEventId, StringComparison.OrdinalIgnoreCase) &&
-            (!_liveStatuses.TryGetValue(r.Event.Id, out var st) ||
-             st.Phase is not (MatchPlayPhase.HalftimeOrBreak or MatchPlayPhase.Finished)));
-
-        if (activelyPlaying is not null)
-        {
-            return activelyPlaying;
-        }
-
+        // Only auto-switch to an unskipped live match that is actively in play (never auto-enter Finished or Halftime!)
         return LiveEvents.FirstOrDefault(r =>
             !r.IsSkipped &&
-            !r.Event.Id.Equals(excludeEventId, StringComparison.OrdinalIgnoreCase));
+            !r.Event.Id.Equals(excludeEventId, StringComparison.OrdinalIgnoreCase) &&
+            !IsEventInBreakOrFinished(r.Event.Id));
     }
 
     private void RebuildLiveEventsSkippedFlags()
     {
-        LiveEvents = LiveEvents
-            .Select(r => new RankedSportEvent
+        LiveEvents = SortLiveEventsByPlayability(
+            LiveEvents.Select(r => new RankedSportEvent
             {
                 Event = r.Event,
                 Score = r.Score,
@@ -590,12 +651,7 @@ public sealed class ChannelOrchestrator
                 IsSkipped = _skippedEventIds.Contains(r.Event.Id),
                 ScoreBreakdown = r.ScoreBreakdown,
                 MatchedReasons = r.MatchedReasons
-            })
-            .OrderBy(r => r.IsSkipped)
-            .ThenByDescending(r => r.Score)
-            .ThenBy(r => r.Event.StartTime ?? DateTimeOffset.MaxValue)
-            .ThenBy(r => r.Event.Title, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+            }));
     }
 
     private void EvaluateHigherPriorityCandidate(RankingProfile profile)

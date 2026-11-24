@@ -353,7 +353,7 @@ public partial class MainWindow : Window
 
                 StandbyScanStatusText.Text = $"Skannar {service.DisplayName}...";
                 var result = await _webViewManager.ScanServiceAsync(service, ct);
-                ApplyServiceScanResult(service, result);
+                await ApplyServiceScanResultAsync(service, result, ct);
 
                 // Space out requests politely so streaming services are never hit with rapid bursts
                 if (i < targets.Count - 1)
@@ -416,7 +416,7 @@ public partial class MainWindow : Window
         _scanPolicy.Reset(serviceId);
         StandbyScanStatusText.Text = $"Skannar {service.DisplayName}...";
         var result = await _webViewManager.ScanServiceAsync(service);
-        ApplyServiceScanResult(service, result);
+        await ApplyServiceScanResultAsync(service, result);
 
         if (showDiagnostics && _overlay is not null)
         {
@@ -458,7 +458,7 @@ public partial class MainWindow : Window
         SyncOverlayState();
     }
 
-    private void ApplyServiceScanResult(ServiceConfig service, ServiceScanResult result)
+    private async Task ApplyServiceScanResultAsync(ServiceConfig service, ServiceScanResult result, CancellationToken ct = default)
     {
         service.AuthState = result.AuthState;
         service.LastScanUtc = DateTimeOffset.UtcNow;
@@ -470,6 +470,21 @@ public partial class MainWindow : Window
 
         _scanPolicy.RecordOutcome(service.ServiceId, result.AuthState, DateTimeOffset.UtcNow);
         _eventsByService[service.ServiceId] = result.Events;
+
+        // Pre-fetch live match phases/scores BEFORE UpdateCatalog auto-selects, so already-finished or halftime
+        // streams are immediately labelled in Sportguiden and never auto-entered by mistake.
+        var liveCandidates = result.Events
+            .Where(e => e.Status == EventStatus.Live && !service.IsSportBlocked(e.Sport))
+            .ToList();
+        if (liveCandidates.Count > 0)
+        {
+            var statuses = await _matchStatusService.FetchStatusesAsync(liveCandidates, ct);
+            if (statuses.Count > 0)
+            {
+                _orchestrator.PreloadMatchStatuses(statuses);
+            }
+        }
+
         _store.Save(_config);
         RecomputeCatalog();
     }
@@ -556,7 +571,8 @@ public partial class MainWindow : Window
 
         var current = _orchestrator.CurrentEvent;
         var paused = _orchestrator.PausedPrimaryEvent;
-        if (current is null && paused is null)
+        var allLive = _orchestrator.LiveEvents;
+        if (current is null && paused is null && allLive.Count == 0)
         {
             return;
         }
@@ -573,14 +589,14 @@ public partial class MainWindow : Window
                 }
             }
 
-            // Re-read CurrentEvent in case PausedPrimaryEvent just resumed and switched back
-            current = _orchestrator.CurrentEvent;
-            if (current is not null)
+            // Refresh live scores & phases for all live guide items (uses 18s per-league cache -> 1-2 HTTP calls total)
+            var liveSnapshot = _orchestrator.LiveEvents.Select(e => e.Event).ToList();
+            if (liveSnapshot.Count > 0)
             {
-                var status = await _matchStatusService.FetchStatusAsync(current.Event);
-                if (status is not null)
+                var statuses = await _matchStatusService.FetchStatusesAsync(liveSnapshot);
+                foreach (var (eventId, st) in statuses)
                 {
-                    _orchestrator.ReportMatchStatus(current.Event.Id, status, _config.RankingProfile);
+                    _orchestrator.ReportMatchStatus(eventId, st, _config.RankingProfile);
                 }
             }
 
@@ -1216,7 +1232,8 @@ public partial class MainWindow : Window
             _orchestrator.PendingOffer,
             _watchdogNotice,
             _orchestrator.GetMatchStatus(_orchestrator.CurrentEvent?.Event.Id),
-            _orchestrator.PausedPrimaryEvent);
+            _orchestrator.PausedPrimaryEvent,
+            _orchestrator.LiveStatuses);
     }
 
     private void RenderStandbyDashboard()

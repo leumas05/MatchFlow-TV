@@ -30,6 +30,7 @@ public partial class TvOverlayWindow : Window
     private List<ServiceConfig> _services = [];
     private IReadOnlyList<RankedSportEvent> _liveEvents = [];
     private IReadOnlyList<RankedSportEvent> _upcomingEvents = [];
+    private IReadOnlyDictionary<string, MatchLiveStatus> _liveStatuses = new Dictionary<string, MatchLiveStatus>();
     private RankedSportEvent? _currentEvent;
     private PendingSwitchOffer? _pendingOffer;
     private string _selectedSportFilter = "Alla";
@@ -111,13 +112,15 @@ public partial class TvOverlayWindow : Window
         PendingSwitchOffer? pendingOffer,
         string? watchdogNotice = null,
         MatchLiveStatus? activeMatchStatus = null,
-        RankedSportEvent? pausedPrimaryEvent = null)
+        RankedSportEvent? pausedPrimaryEvent = null,
+        IReadOnlyDictionary<string, MatchLiveStatus>? liveStatuses = null)
     {
         _currentEvent = currentEvent;
         _isMuted = isMuted;
         _isTheaterMode = isTheaterMode;
         _liveEvents = liveEvents;
         _upcomingEvents = upcomingEvents;
+        _liveStatuses = liveStatuses ?? new Dictionary<string, MatchLiveStatus>();
         _latestRanking = rankingProfile;
         _services = services;
         _pendingOffer = pendingOffer;
@@ -460,9 +463,16 @@ public partial class TvOverlayWindow : Window
     private void RenderGuideLists(bool restoreFocus = false)
     {
         var skippedCount = _liveEvents.Count(e => e.IsSkipped);
+        var finishedCount = _liveEvents.Count(e => _liveStatuses.TryGetValue(e.Event.Id, out var st) && st.Phase == MatchPlayPhase.Finished);
+        var pausedCount = _liveEvents.Count(e => _liveStatuses.TryGetValue(e.Event.Id, out var st) && st.Phase == MatchPlayPhase.HalftimeOrBreak);
         GuideResetSkippedButton.Visibility = skippedCount > 0 ? Visibility.Visible : Visibility.Collapsed;
-        var skippedSuffix = skippedCount > 0 ? $" ({skippedCount} överhoppade)" : "";
-        GuideSummaryText.Text = $"{_liveEvents.Count} pågående matcher{skippedSuffix} • {_upcomingEvents.Count} kommande  (Bläddra med Upp/Ner + Enter)";
+
+        var notes = new List<string>();
+        if (pausedCount > 0) notes.Add($"{pausedCount} paus");
+        if (finishedCount > 0) notes.Add($"{finishedCount} slut");
+        if (skippedCount > 0) notes.Add($"{skippedCount} överhoppade");
+        var noteSuffix = notes.Count > 0 ? $" ({string.Join(", ", notes)})" : "";
+        GuideSummaryText.Text = $"{_liveEvents.Count} pågående sändningar{noteSuffix} • {_upcomingEvents.Count} kommande  (Bläddra med Upp/Ner + Enter)";
         _guideFocusButtons.Clear();
 
         // Build sport filter pills
@@ -618,13 +628,36 @@ public partial class TvOverlayWindow : Window
     {
         var isPlaying = _currentEvent?.Event.Id == item.Event.Id;
         var isSkipped = isLive && item.IsSkipped && !isPlaying;
+        MatchLiveStatus? liveStatus = null;
+        if (isLive)
+        {
+            _liveStatuses.TryGetValue(item.Event.Id, out liveStatus);
+        }
+        var isFinished = liveStatus?.Phase == MatchPlayPhase.Finished;
+        var isInBreak = liveStatus?.Phase == MatchPlayPhase.HalftimeOrBreak;
+
         var svc = _services.FirstOrDefault(s => s.ServiceId == item.Event.ServiceId);
         var svcColor = TryParseColor(svc?.AccentColorHex, Color.FromRgb(56, 189, 248));
 
+        var cardBg = isPlaying
+            ? Color.FromRgb(20, 83, 45)
+            : isFinished || isSkipped
+                ? Color.FromRgb(17, 23, 36)
+                : Color.FromRgb(24, 34, 53);
+        var cardBorder = isPlaying
+            ? Color.FromRgb(34, 197, 94)
+            : isFinished
+                ? Color.FromRgb(127, 29, 29)
+                : isInBreak
+                    ? Color.FromRgb(180, 83, 9)
+                    : isSkipped
+                        ? Color.FromRgb(71, 85, 105)
+                        : Color.FromRgb(41, 53, 72);
+
         var card = new Border
         {
-            Background = new SolidColorBrush(isPlaying ? Color.FromRgb(20, 83, 45) : isSkipped ? Color.FromRgb(18, 24, 38) : Color.FromRgb(24, 34, 53)),
-            BorderBrush = new SolidColorBrush(isPlaying ? Color.FromRgb(34, 197, 94) : isSkipped ? Color.FromRgb(71, 85, 105) : Color.FromRgb(41, 53, 72)),
+            Background = new SolidColorBrush(cardBg),
+            BorderBrush = new SolidColorBrush(cardBorder),
             BorderThickness = new Thickness(isPlaying ? 2 : 1),
             CornerRadius = new CornerRadius(12),
             Padding = new Thickness(14),
@@ -677,6 +710,47 @@ public partial class TvOverlayWindow : Window
             Margin = new Thickness(0, 0, 8, 0),
             Child = new TextBlock { Text = item.Event.ServiceName, Foreground = Brushes.White, FontSize = 11, FontWeight = FontWeights.Bold }
         });
+        if (isLive && liveStatus is not null)
+        {
+            var badgeText = liveStatus.FormatBadgeText();
+            if (isFinished)
+            {
+                var label = string.IsNullOrWhiteSpace(badgeText) ? "🏁 SLUT" : $"🏁 {badgeText.ToUpperInvariant()}";
+                topLine.Children.Add(new Border
+                {
+                    Background = new SolidColorBrush(Color.FromRgb(127, 29, 29)),
+                    CornerRadius = new CornerRadius(5),
+                    Padding = new Thickness(7, 2, 7, 2),
+                    Margin = new Thickness(0, 0, 8, 0),
+                    Child = new TextBlock { Text = label, Foreground = new SolidColorBrush(Color.FromRgb(254, 202, 202)), FontSize = 10, FontWeight = FontWeights.Bold }
+                });
+            }
+            else if (isInBreak)
+            {
+                var label = string.IsNullOrWhiteSpace(badgeText) ? "☕ PAUS" : $"☕ {badgeText.ToUpperInvariant()}";
+                topLine.Children.Add(new Border
+                {
+                    Background = new SolidColorBrush(Color.FromRgb(120, 53, 15)),
+                    CornerRadius = new CornerRadius(5),
+                    Padding = new Thickness(7, 2, 7, 2),
+                    Margin = new Thickness(0, 0, 8, 0),
+                    Child = new TextBlock { Text = label, Foreground = new SolidColorBrush(Color.FromRgb(253, 230, 138)), FontSize = 10, FontWeight = FontWeights.Bold }
+                });
+            }
+            else if (liveStatus.Phase == MatchPlayPhase.InPlay && !string.IsNullOrWhiteSpace(badgeText))
+            {
+                topLine.Children.Add(new Border
+                {
+                    Background = new SolidColorBrush(Color.FromRgb(6, 78, 59)),
+                    BorderBrush = new SolidColorBrush(Color.FromRgb(34, 197, 94)),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(5),
+                    Padding = new Thickness(7, 2, 7, 2),
+                    Margin = new Thickness(0, 0, 8, 0),
+                    Child = new TextBlock { Text = $"⏱ {badgeText}", Foreground = new SolidColorBrush(Color.FromRgb(187, 247, 208)), FontSize = 10, FontWeight = FontWeights.Bold }
+                });
+            }
+        }
         if (isSkipped)
         {
             topLine.Children.Add(new Border
@@ -721,9 +795,16 @@ public partial class TvOverlayWindow : Window
 
         if (isLive)
         {
+            var btnLabel = isPlaying
+                ? "▶ Spelas nu"
+                : isFinished
+                    ? "Eftersnack"
+                    : isInBreak
+                        ? "Titta (Paus)"
+                        : "Titta";
             var btn = new Button
             {
-                Content = isPlaying ? "▶ Spelas nu" : "Titta",
+                Content = btnLabel,
                 Style = (Style)FindResource(isPlaying ? "TvAccentButtonStyle" : "TvButtonStyle"),
                 Margin = new Thickness(12, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center

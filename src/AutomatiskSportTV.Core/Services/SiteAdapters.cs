@@ -338,17 +338,25 @@ public static class SiteAdapters
     };
 
     const cleanDisneyTitleAndContext = (rawTitle) => {
-      let t = String(rawTitle || "").replace(/\s+/g, " ").trim();
+      let t = String(rawTitle || "")
+        .replace(/[\u200B-\u200F\u202A-\u202E\uFEFF\u00A0]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
       const extraContext = [];
 
-      // Strip leading status/date/time accessibility text from Disney+ aria-labels
-      t = t
-        .replace(/^(började för \d+\s+(minut|minuter|timme|timmar)\s+sedan|started \d+\s+(minute|minutes|hour|hours)\s+ago)\s*[.,:\-–|•]?\s*/i, "")
-        .replace(/^\d{1,2}\/\d{1,2}\s*\|\s*\d{1,2}[:.]\d{2}\s*/i, "")
-        .replace(/^\d{1,2}\s+(januari|februari|mars|april|maj|juni|juli|augusti|september|oktober|november|december|jan|feb|mar|apr|jun|jul|aug|sep|okt|nov|dec)\.?\s*(\d{4})?\s*[•·,\-–|]?\s*/i, "")
-        .replace(/^(\d{1,2}[:.]\d{2}\s*[-–—]\s*\d{1,2}[:.]\d{2}\s*)+/i, "")
-        .replace(/^\d{1,2}[:.]\d{2}\s*(\d{1,2}[:.]\d{2}\s*[-–—]\s*\d{1,2}[:.]\d{2})?\s*[•·,\-–|]?\s*/i, "")
-        .replace(/^(live now|live nu|live|kommer|kommande|upcoming|idag|i dag|imorgon|i morgon)\s*[.,:\-–|•]?\s*/i, "");
+      // Strip leading status/date/time accessibility text from Disney+ aria-labels (loop up to 4x for stacked prefixes)
+      for (let pass = 0; pass < 4; pass++) {
+        const before = t;
+        t = t
+          .replace(/^(började för \d+\s+(minut|minuter|timme|timmar)\s+sedan|started \d+\s+(minute|minutes|hour|hours)\s+ago)\s*[.,:\-–—|│•·]?\s*/i, "")
+          .replace(/^\d{1,2}\/\d{1,2}\s*[|│]\s*\d{1,2}[:.]\d{2}\s*/i, "")
+          .replace(/^\d{1,2}\s+(januari|februari|mars|april|maj|juni|juli|augusti|september|oktober|november|december|jan|feb|mar|apr|jun|jul|aug|sep|okt|nov|dec)\.?\s*(\d{4})?\s*[•·,\-–—|│]?\s*/i, "")
+          .replace(/^\d{1,2}[:.]\d{2}\s*[-–—]\s*\d{1,2}[:.]\d{2}\s*[•·,\-–—|│]?\s*/i, "")
+          .replace(/^\d{1,2}[:.]\d{2}\s*[•·,\-–—|│]?\s*/i, "")
+          .replace(/^(live now|live nu|live|kommer|kommande|upcoming|idag|i dag|imorgon|i morgon)\s*[.,:\-–—|│•·]?\s*/i, "")
+          .trim();
+        if (t === before) break;
+      }
 
       // Strip trailing screen-reader boilerplate ("Premiär 2026. Välj för mer information om denna titel.", "Choose Feed Entry")
       t = t

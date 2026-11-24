@@ -23,8 +23,11 @@ public sealed partial class LiveMatchStatusService
     private static readonly Dictionary<string, string[]> LeagueEndpoints = new(StringComparer.OrdinalIgnoreCase)
     {
         ["Champions League"] = ["soccer/uefa.champions"],
+        ["UEFA Champions League"] = ["soccer/uefa.champions"],
         ["Europa League"] = ["soccer/uefa.europa"],
+        ["UEFA Europa League"] = ["soccer/uefa.europa"],
         ["Conference League"] = ["soccer/uefa.europa.conf"],
+        ["UEFA Conference League"] = ["soccer/uefa.europa.conf"],
         ["Premier League"] = ["soccer/eng.1"],
         ["EFL Championship"] = ["soccer/eng.2"],
         ["Allsvenskan"] = ["soccer/swe.1"],
@@ -34,6 +37,7 @@ public sealed partial class LiveMatchStatusService
         ["Bundesliga"] = ["soccer/ger.1"],
         ["Ligue 1"] = ["soccer/fra.1"],
         ["Nations League"] = ["soccer/uefa.nations"],
+        ["UEFA Nations League"] = ["soccer/uefa.nations"],
         ["Fotbolls-VM"] = ["soccer/fifa.world"],
         ["Fotbolls-EM"] = ["soccer/uefa.euro"],
         ["NHL"] = ["hockey/nhl"],
@@ -94,6 +98,46 @@ public sealed partial class LiveMatchStatusService
         ["grekland"] = ["greece"],
         ["turkiet"] = ["turkey", "turkiye"]
     };
+
+    /// <summary>
+    /// Batch-fetches live match phase & score for all given live events using the per-league scoreboard cache
+    /// (so e.g. 10 Champions League fixtures only trigger 1 single HTTPS request).
+    /// </summary>
+    public async Task<Dictionary<string, MatchLiveStatus>> FetchStatusesAsync(
+        IEnumerable<SportEvent> liveEvents,
+        CancellationToken ct = default)
+    {
+        var results = new Dictionary<string, MatchLiveStatus>(StringComparer.OrdinalIgnoreCase);
+        using var budgetCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        budgetCts.CancelAfter(TimeSpan.FromSeconds(5));
+
+        foreach (var evt in liveEvents)
+        {
+            if (budgetCts.IsCancellationRequested)
+            {
+                break;
+            }
+
+            try
+            {
+                var status = await FetchStatusAsync(evt, budgetCts.Token);
+                if (status is not null)
+                {
+                    results[evt.Id] = status;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch
+            {
+                // Keep checking remaining events
+            }
+        }
+
+        return results;
+    }
 
     /// <summary>
     /// Fetches the current live match phase and score for the given sport event if covered by a public scoreboard feed.

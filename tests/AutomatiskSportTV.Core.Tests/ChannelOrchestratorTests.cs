@@ -88,12 +88,13 @@ public class ChannelOrchestratorTests
         profile.FavoriteLeagues = ["Champions League"];
 
         var orchestrator = new ChannelOrchestrator();
+        var now = DateTimeOffset.Now;
         var events = new[]
         {
-            new SportEvent { Id = "thu-swe", ServiceId = StreamingServiceId.SvtPlay, ServiceName = "SVT Play", Title = "Handboll: Sverige - Island", StartTime = new DateTimeOffset(2026, 11, 26, 18, 5, 0, TimeSpan.FromHours(1)), Status = EventStatus.Upcoming },
-            new SportEvent { Id = "today-como", ServiceId = StreamingServiceId.Viaplay, ServiceName = "Viaplay", Title = "Como - AEK Aten", League = "Champions League", Sport = "Fotboll", StartTime = new DateTimeOffset(2026, 11, 24, 20, 50, 0, TimeSpan.FromHours(1)), Status = EventStatus.Upcoming },
-            new SportEvent { Id = "today-ars", ServiceId = StreamingServiceId.Viaplay, ServiceName = "Viaplay", Title = "Arsenal - Dortmund", League = "Champions League", Sport = "Fotboll", StartTime = new DateTimeOffset(2026, 11, 24, 20, 50, 0, TimeSpan.FromHours(1)), Status = EventStatus.Upcoming },
-            new SportEvent { Id = "today-early", ServiceId = StreamingServiceId.Viaplay, ServiceName = "Viaplay", Title = "CL-studion: Galatasaray - Aston Villa", League = "Champions League", Sport = "Fotboll", StartTime = new DateTimeOffset(2026, 11, 24, 18, 30, 0, TimeSpan.FromHours(1)), Status = EventStatus.Upcoming },
+            new SportEvent { Id = "thu-swe", ServiceId = StreamingServiceId.SvtPlay, ServiceName = "SVT Play", Title = "Handboll: Sverige - Island", StartTime = now.AddDays(2).AddHours(1), Status = EventStatus.Upcoming },
+            new SportEvent { Id = "today-como", ServiceId = StreamingServiceId.Viaplay, ServiceName = "Viaplay", Title = "Como - AEK Aten", League = "Champions League", Sport = "Fotboll", StartTime = now.AddHours(3), Status = EventStatus.Upcoming },
+            new SportEvent { Id = "today-ars", ServiceId = StreamingServiceId.Viaplay, ServiceName = "Viaplay", Title = "Arsenal - Dortmund", League = "Champions League", Sport = "Fotboll", StartTime = now.AddHours(3), Status = EventStatus.Upcoming },
+            new SportEvent { Id = "today-early", ServiceId = StreamingServiceId.Viaplay, ServiceName = "Viaplay", Title = "CL-studion: Galatasaray - Aston Villa", League = "Champions League", Sport = "Fotboll", StartTime = now.AddHours(1), Status = EventStatus.Upcoming },
             new SportEvent { Id = "no-time", ServiceId = StreamingServiceId.DisneyPlus, ServiceName = "Disney+", Title = "Belmont vs. Akron", StartTime = null, Status = EventStatus.Upcoming }
         };
 
@@ -267,5 +268,76 @@ public class ChannelOrchestratorTests
         orchestrator.AcceptPendingSwitch();
         Assert.Equal("city", orchestrator.CurrentEvent?.Event.Id);
         Assert.Null(orchestrator.PausedPrimaryEvent);
+    }
+
+    [Fact]
+    public void UpdateCatalog_NeverAutoEntersFinishedOrHalftimeMatchWhenActiveMatchExists()
+    {
+        var profile = RankingProfile.CreateDefault();
+        profile.FavoriteTeams = ["Arsenal"];
+
+        var orchestrator = new ChannelOrchestrator();
+        orchestrator.PreloadMatchStatuses(new Dictionary<string, MatchLiveStatus>
+        {
+            ["ars"] = new() { Phase = MatchPlayPhase.Finished, HomeScore = "2", AwayScore = "1", DetailText = "Slut" },
+            ["city"] = new() { Phase = MatchPlayPhase.HalftimeOrBreak, HomeScore = "1", AwayScore = "0", DetailText = "Halvtid", Period = 1 },
+            ["bask"] = new() { Phase = MatchPlayPhase.InPlay, HomeScore = "42", AwayScore = "38", ClockDisplay = "Q2 05:10", Period = 2 }
+        });
+
+        var events = new[]
+        {
+            new SportEvent { Id = "ars", ServiceId = StreamingServiceId.Viaplay, ServiceName = "Viaplay", Title = "Arsenal - Dortmund", League = "Champions League", Status = EventStatus.Live },
+            new SportEvent { Id = "city", ServiceId = StreamingServiceId.Viaplay, ServiceName = "Viaplay", Title = "Man City - Napoli", League = "Champions League", Status = EventStatus.Live },
+            new SportEvent { Id = "bask", ServiceId = StreamingServiceId.DisneyPlus, ServiceName = "Disney+", Title = "Creighton vs. Michigan", Sport = "Basket", Status = EventStatus.Live }
+        };
+
+        orchestrator.UpdateCatalog(events, profile);
+
+        // Must skip Finished (Arsenal) & Halftime (Man City) and auto-enter actively playing basketball!
+        Assert.Equal("bask", orchestrator.CurrentEvent?.Event.Id);
+        // All 3 remain visible in LiveEvents sorted: InPlay -> Halftime -> Finished
+        Assert.Equal(["bask", "city", "ars"], orchestrator.LiveEvents.Select(e => e.Event.Id).ToArray());
+
+        // User can still voluntarily click the Finished match in Sportguiden to watch post-match show
+        Assert.True(orchestrator.SelectEvent("ars"));
+        Assert.Equal("ars", orchestrator.CurrentEvent?.Event.Id);
+    }
+
+    [Fact]
+    public void UpdateCatalog_DoesNotAutoPlayWhenOnlyFinishedMatchesExist()
+    {
+        var profile = RankingProfile.CreateDefault();
+        var orchestrator = new ChannelOrchestrator();
+        orchestrator.PreloadMatchStatuses(new Dictionary<string, MatchLiveStatus>
+        {
+            ["ars"] = new() { Phase = MatchPlayPhase.Finished, HomeScore = "2", AwayScore = "1", DetailText = "Slut" }
+        });
+
+        var events = new[]
+        {
+            new SportEvent { Id = "ars", ServiceId = StreamingServiceId.Viaplay, ServiceName = "Viaplay", Title = "Arsenal - Dortmund", League = "Champions League", Status = EventStatus.Live }
+        };
+
+        orchestrator.UpdateCatalog(events, profile);
+
+        Assert.Null(orchestrator.CurrentEvent);
+        Assert.Single(orchestrator.LiveEvents);
+    }
+
+    [Fact]
+    public void UpdateCatalog_ExcludesPastUpcomingEvents()
+    {
+        var profile = RankingProfile.CreateDefault();
+        var orchestrator = new ChannelOrchestrator();
+        var events = new[]
+        {
+            new SportEvent { Id = "past", ServiceId = StreamingServiceId.Expressen, ServiceName = "Expressen", Title = "Edsbyn - Villa", StartTime = DateTimeOffset.Now.AddHours(-4), Status = EventStatus.Upcoming },
+            new SportEvent { Id = "future", ServiceId = StreamingServiceId.DisneyPlus, ServiceName = "Disney+", Title = "Creighton vs. Michigan", StartTime = DateTimeOffset.Now.AddHours(1), Status = EventStatus.Upcoming }
+        };
+
+        orchestrator.UpdateCatalog(events, profile);
+
+        Assert.Single(orchestrator.UpcomingEvents);
+        Assert.Equal("future", orchestrator.UpcomingEvents[0].Event.Id);
     }
 }
