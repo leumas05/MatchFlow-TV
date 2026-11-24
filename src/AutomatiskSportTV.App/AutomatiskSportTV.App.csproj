@@ -16,7 +16,7 @@
     <PackageProjectUrl>https://www.s4m.dev/</PackageProjectUrl>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <Version>1.0.0</Version>
-    <GitHubRepository Condition="'$(GitHubRepository)' == ''"></GitHubRepository>
+    <GitHubRepository Condition="'$(GitHubRepository)' == ''">leumas05/MatchFlow-TV</GitHubRepository>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <AllowedReferenceRelatedFileExtensions>.none</AllowedReferenceRelatedFileExtensions>
   </PropertyGroup>
