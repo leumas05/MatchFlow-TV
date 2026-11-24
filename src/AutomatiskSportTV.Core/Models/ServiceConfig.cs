@@ -20,7 +20,16 @@ public sealed class ServiceConfig
     public string? LastError { get; set; }
 
     /// <summary>
-    /// Creates the default configurations for all six supported Swedish streaming services.
+    /// Resolves dynamic placeholders such as {today} (yyyy-MM-dd in local time) inside SportsHubUrl.
+    /// </summary>
+    public string ResolveSportsHubUrl(DateTimeOffset? localNow = null)
+    {
+        var now = localNow ?? DateTimeOffset.Now;
+        return (SportsHubUrl ?? string.Empty).Replace("{today}", now.ToString("yyyy-MM-dd"), StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Creates the default configurations for all supported Swedish streaming services.
     /// </summary>
     public static List<ServiceConfig> CreateDefaults() =>
     [
@@ -31,7 +40,7 @@ public sealed class ServiceConfig
             AccentColorHex = "#E11D48",
             Enabled = true,
             RequiresLogin = false,
-            SportsHubUrl = "https://www.svtplay.se/kategori/sport",
+            SportsHubUrl = "https://www.svtplay.se/kategori/sport?tab=schedule&scheduleCategory=all",
             LoginUrl = "https://www.svtplay.se/konto",
             AuthState = ServiceAuthState.NotRequired
         },
@@ -42,7 +51,7 @@ public sealed class ServiceConfig
             AccentColorHex = "#EF4444",
             Enabled = true,
             RequiresLogin = true,
-            SportsHubUrl = "https://www.tv4play.se/sport",
+            SportsHubUrl = "https://www.tv4play.se/sport/tabla?d={today}",
             LoginUrl = "https://www.tv4play.se/logga-in",
             AuthState = ServiceAuthState.Unknown
         },
@@ -53,7 +62,7 @@ public sealed class ServiceConfig
             AccentColorHex = "#F43F5E",
             Enabled = true,
             RequiresLogin = true,
-            SportsHubUrl = "https://viaplay.se/sport",
+            SportsHubUrl = "https://viaplay.se/sport#sport-schedule-top",
             LoginUrl = "https://viaplay.se/login",
             AuthState = ServiceAuthState.Unknown
         },
@@ -64,7 +73,7 @@ public sealed class ServiceConfig
             AccentColorHex = "#3B82F6",
             Enabled = true,
             RequiresLogin = true,
-            SportsHubUrl = "https://www.disneyplus.com/home",
+            SportsHubUrl = "https://www.disneyplus.com/sv-se/browse/page-1eaf1f02-deb4-48d0-b54f-cbf7a843e8f3",
             LoginUrl = "https://www.disneyplus.com/login",
             AuthState = ServiceAuthState.Unknown
         },
@@ -97,8 +106,8 @@ public sealed class ServiceConfig
             AccentColorHex = "#C81E1E",
             Enabled = true,
             RequiresLogin = true,
-            SportsHubUrl = "https://livesport.expressen.se",
-            LoginUrl = "https://livesport.expressen.se",
+            SportsHubUrl = "https://livesport.expressen.se/sv/live",
+            LoginUrl = "https://livesport.expressen.se/sv/live",
             AuthState = ServiceAuthState.Unknown
         },
         new()

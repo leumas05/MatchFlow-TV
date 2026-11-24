@@ -78,15 +78,32 @@ public sealed class AppStateStore
         File.Move(tempPath, _configFilePath, overwrite: true);
     }
 
+    private static readonly Dictionary<StreamingServiceId, string[]> LegacyDefaultUrls = new()
+    {
+        [StreamingServiceId.SvtPlay] = ["https://www.svtplay.se/kategori/sport"],
+        [StreamingServiceId.Tv4Play] = ["https://www.tv4play.se/sport"],
+        [StreamingServiceId.Viaplay] = ["https://viaplay.se/sport"],
+        [StreamingServiceId.DisneyPlus] = ["https://www.disneyplus.com/home", "https://www.disneyplus.com/sv-se/browse/sport"],
+        [StreamingServiceId.Expressen] = ["https://livesport.expressen.se", "https://livesport.expressen.se/"]
+    };
+
     private static void EnsureAllServicesPresent(AppConfigSnapshot snapshot)
     {
         var defaults = ServiceConfig.CreateDefaults();
         foreach (var def in defaults)
         {
-            if (!snapshot.Services.Any(s => s.ServiceId == def.ServiceId))
+            var existing = snapshot.Services.FirstOrDefault(s => s.ServiceId == def.ServiceId);
+            if (existing is null)
             {
                 snapshot.Services.Add(def);
             }
+            else if (LegacyDefaultUrls.TryGetValue(def.ServiceId, out var legacyUrls) &&
+                     legacyUrls.Any(old => old.Equals(existing.SportsHubUrl?.Trim(), StringComparison.OrdinalIgnoreCase)))
+            {
+                existing.SportsHubUrl = def.SportsHubUrl;
+                existing.LoginUrl = def.LoginUrl;
+            }
+
             if (!snapshot.RankingProfile.ServicePriorities.Contains(def.ServiceId))
             {
                 snapshot.RankingProfile.ServicePriorities.Add(def.ServiceId);

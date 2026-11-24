@@ -177,12 +177,12 @@ public sealed class WebViewHostManager : IAsyncDisposable
     public async Task OpenInteractiveLoginAsync(ServiceConfig service)
     {
         var targetUrl = service.AuthState is ServiceAuthState.Authenticated or ServiceAuthState.NotRequired or ServiceAuthState.ProfileSelectionRequired
-            ? service.SportsHubUrl
+            ? service.ResolveSportsHubUrl()
             : service.LoginUrl;
 
         if (!UrlSecurityGuard.IsSafeHttpsUrl(targetUrl))
         {
-            targetUrl = service.SportsHubUrl;
+            targetUrl = service.ResolveSportsHubUrl();
         }
         if (!UrlSecurityGuard.IsSafeHttpsUrl(targetUrl))
         {
@@ -266,7 +266,8 @@ public sealed class WebViewHostManager : IAsyncDisposable
     /// </summary>
     public async Task<ServiceScanResult> ScanServiceAsync(ServiceConfig service, CancellationToken ct = default)
     {
-        if (!UrlSecurityGuard.IsTrustedServiceUrl(service.ServiceId, service.SportsHubUrl))
+        var scanUrl = service.ResolveSportsHubUrl();
+        if (!UrlSecurityGuard.IsTrustedServiceUrl(service.ServiceId, scanUrl))
         {
             service.LastError = "Ogiltig eller osäker HTTPS-adress för tjänsten.";
             return new ServiceScanResult
@@ -290,7 +291,7 @@ public sealed class WebViewHostManager : IAsyncDisposable
             scanner.CoreWebView2.NavigationCompleted += OnNavCompleted;
             try
             {
-                scanner.CoreWebView2.Navigate(service.SportsHubUrl);
+                scanner.CoreWebView2.Navigate(scanUrl);
                 using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 timeoutCts.CancelAfter(TimeSpan.FromSeconds(18));
 
@@ -308,9 +309,13 @@ public sealed class WebViewHostManager : IAsyncDisposable
                 scanner.CoreWebView2.NavigationCompleted -= OnNavCompleted;
             }
 
-            await Task.Delay(TimeSpan.FromSeconds(3.2), ct);
-            await scanner.CoreWebView2.ExecuteScriptAsync("window.scrollBy(0, 480);");
-            await Task.Delay(TimeSpan.FromMilliseconds(900), ct);
+            // Client-only SPAs (TV4 Tablå, Expressen/StayLive, Disney+) need a slightly longer hydration wait
+            var initialWaitSec = service.ServiceId is StreamingServiceId.Tv4Play or StreamingServiceId.Expressen or StreamingServiceId.DisneyPlus
+                ? 4.2
+                : 3.0;
+            await Task.Delay(TimeSpan.FromSeconds(initialWaitSec), ct);
+            await scanner.CoreWebView2.ExecuteScriptAsync("window.scrollBy(0, 600);");
+            await Task.Delay(TimeSpan.FromMilliseconds(1000), ct);
 
             var script = SiteAdapters.BuildScannerScript(service.ServiceId);
             var rawJson = await scanner.CoreWebView2.ExecuteScriptAsync(script);

@@ -42,6 +42,20 @@ public class AppStateStoreTests
             Assert.Contains(reloaded.Services, s => s.ServiceId == StreamingServiceId.HboMax);
             Assert.Contains(StreamingServiceId.Expressen, reloaded.RankingProfile.ServicePriorities);
             Assert.Contains(StreamingServiceId.HboMax, reloaded.RankingProfile.ServicePriorities);
+
+            // Verify legacy default URLs migrate cleanly to new dedicated schedule URLs
+            var tv4 = reloaded.Services.First(s => s.ServiceId == StreamingServiceId.Tv4Play);
+            tv4.SportsHubUrl = "https://www.tv4play.se/sport";
+            var svt = reloaded.Services.First(s => s.ServiceId == StreamingServiceId.SvtPlay);
+            svt.SportsHubUrl = "https://www.svtplay.se/kategori/sport";
+            store.Save(reloaded);
+
+            var migrated = store.Load();
+            var migratedTv4 = migrated.Services.First(s => s.ServiceId == StreamingServiceId.Tv4Play);
+            var migratedSvt = migrated.Services.First(s => s.ServiceId == StreamingServiceId.SvtPlay);
+            Assert.Equal("https://www.tv4play.se/sport/tabla?d={today}", migratedTv4.SportsHubUrl);
+            Assert.Equal("https://www.tv4play.se/sport/tabla?d=2026-11-24", migratedTv4.ResolveSportsHubUrl(new DateTimeOffset(2026, 11, 24, 15, 0, 0, TimeSpan.FromHours(1))));
+            Assert.Equal("https://www.svtplay.se/kategori/sport?tab=schedule&scheduleCategory=all", migratedSvt.SportsHubUrl);
         }
         finally
         {

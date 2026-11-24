@@ -8,7 +8,9 @@ public class SecurityAndPolicyTests
 {
     [Theory]
     [InlineData(StreamingServiceId.SvtPlay, "https://www.svtplay.se/video/abc", true)]
-    [InlineData(StreamingServiceId.Expressen, "https://livesport.expressen.se/livestream/1", true)]
+    [InlineData(StreamingServiceId.Expressen, "https://livesport.expressen.se/sv/live", true)]
+    [InlineData(StreamingServiceId.Expressen, "https://api.staylive.tv/v1/stream", true)]
+    [InlineData(StreamingServiceId.DisneyPlus, "https://www.disneyplus.com/sv-se/browse/page-1eaf1f02-deb4-48d0-b54f-cbf7a843e8f3", true)]
     [InlineData(StreamingServiceId.HboMax, "https://play.hbomax.com/sport/event/123", true)]
     [InlineData(StreamingServiceId.HboMax, "https://play.max.com/sport/eurosport-1", true)]
     [InlineData(StreamingServiceId.HboMax, "https://fake-hbomax.example/sport", false)]

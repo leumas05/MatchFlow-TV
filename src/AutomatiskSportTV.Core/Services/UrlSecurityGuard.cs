@@ -17,7 +17,7 @@ public static class UrlSecurityGuard
         [StreamingServiceId.DisneyPlus] = ["disneyplus.com", "disney.com", "bamgrid.com"],
         [StreamingServiceId.PrimeVideo] = ["primevideo.com", "amazon.se", "amazon.com", "amazon.co.uk"],
         [StreamingServiceId.Netflix] = ["netflix.com", "nflxvideo.net"],
-        [StreamingServiceId.Expressen] = ["expressen.se", "bonniernews.se"],
+        [StreamingServiceId.Expressen] = ["expressen.se", "bonniernews.se", "staylive.tv", "staylive.io"],
         [StreamingServiceId.HboMax] = ["hbomax.com", "max.com", "eurosport.com", "wbd.com"]
     };
 

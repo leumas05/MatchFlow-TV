@@ -947,7 +947,8 @@ public partial class TvOverlayWindow : Window
                 var candidate = (urlBox.Text ?? string.Empty).Trim();
                 if (!string.IsNullOrWhiteSpace(candidate) && candidate != service.SportsHubUrl)
                 {
-                    if (UrlSecurityGuard.IsTrustedServiceUrl(service.ServiceId, candidate))
+                    var previewResolved = candidate.Replace("{today}", "2026-01-01", StringComparison.OrdinalIgnoreCase);
+                    if (UrlSecurityGuard.IsTrustedServiceUrl(service.ServiceId, previewResolved))
                     {
                         service.SportsHubUrl = candidate;
                         ServicesChanged?.Invoke(_services);

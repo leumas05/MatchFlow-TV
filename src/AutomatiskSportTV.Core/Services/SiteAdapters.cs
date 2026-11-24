@@ -116,7 +116,385 @@ public static class SiteAdapters
     });
   };
 
-  // Strategy 1: Structured JSON-LD SportsEvent / BroadcastEvent
+  // =========================================================================
+  // Dedicated per-site schedule extractors (verified against real site schemas)
+  // =========================================================================
+
+  // 1. SVT Play (?tab=schedule&scheduleCategory=all) — window.URQL_DATA schedule JSON
+  const scanSvtPlay = () => {
+    let found = 0;
+    try {
+      const urql = window.URQL_DATA;
+      if (urql && typeof urql === "object") {
+        for (const entry of Object.values(urql)) {
+          if (!entry || typeof entry.data !== "string" || !entry.data.includes("categoryPage")) continue;
+          const parsed = JSON.parse(entry.data);
+          const tabs = parsed?.categoryPage?.lazyLoadedTabs || [];
+          const schedTab = tabs.find(t => t?.slug === "schedule") || tabs.find(t => t?.schedule?.schedule?.sections);
+          const sections = schedTab?.schedule?.schedule?.sections || [];
+          for (const sec of sections) {
+            // Skip past days and distant weeks (keep all liveNow + upcoming within ~48 hours)
+            const listId = sec?.analytics?.json?.listId || "";
+            const dateMatch = listId.match(/(\d{4}-\d{2}-\d{2})/);
+            const dateStr = dateMatch ? dateMatch[1] : "";
+            const isPastSection = Boolean(sec?.daysAgoLabel) && !/idag|imorgon/i.test(sec?.heading || "");
+            const listIndex = Number(sec?.analytics?.json?.listIndex || 0);
+
+            for (const mod of (sec?.modules || [])) {
+              const items = mod?.subsection?.scheduleItems || [];
+              for (const item of items) {
+                const isLive = item?.liveNow === true;
+                if (isPastSection && !isLive) continue;
+                if (!isLive && listIndex > 3) continue;
+                const path = item?.urls?.svtplay || "";
+                if (!path) continue;
+                const heading = (item.heading || "").trim();
+                const decoText = (item.decorations?.icon?.text || item.decorations?.text || "").trim();
+                const sub = (item.subHeading || "").trim();
+                const detail = decoText || sub;
+                const detailIsJustTime = /^(ikväll|imorgon|idag|[a-zåäö]{3}\s+\d{1,2}\s+[a-zåäö]{3})\s+\d{1,2}[:.]\d{2}$/i.test(detail);
+                const title = (detail && !detailIsJustTime) ? `${heading} — ${detail}` : heading;
+                const timeLabel = (item.timeLabel || "").trim();
+                const startTimeIso = (dateStr && /^\d{1,2}:\d{2}$/.test(timeLabel))
+                  ? `${dateStr}T${timeLabel.padStart(5, "0")}:00`
+                  : "";
+                addEvent({
+                  title,
+                  subtitle: [sub, item.durationFormatted, item.images?.wide?.description].filter(Boolean).slice(0, 2).join(" • "),
+                  status: isLive ? "Live" : "Upcoming",
+                  startTimeIso,
+                  watchUrl: path
+                });
+                found++;
+              }
+            }
+          }
+        }
+      }
+    } catch {}
+    return found > 0;
+  };
+
+  // 2. Viaplay (/sport#sport-schedule-top) — __NEXT_DATA__ viaplay:blocks -> viaplay:products
+  const scanViaplay = () => {
+    let found = 0;
+    try {
+      const nextEl = document.getElementById("__NEXT_DATA__");
+      if (!nextEl?.textContent) return false;
+      const nd = JSON.parse(nextEl.textContent);
+      const store = nd?.props?.pageProps?.storeState;
+      if (store?.user && typeof store.user.isLoggedIn === "boolean") {
+        result.authState = store.user.isLoggedIn ? "authenticated" : "login_required";
+      }
+
+      const blocks =
+        store?.page?.page?.raw?._embedded?.["viaplay:blocks"] ||
+        store?.page?.raw?._embedded?.["viaplay:blocks"] ||
+        [];
+
+      const sportSlugMap = {
+        fotboll: "Fotboll",
+        ishockey: "Ishockey",
+        motorsport: "Motorsport",
+        vintersport: "Vintersport",
+        handboll: "Handboll",
+        tennis: "Tennis",
+        basket: "Basket",
+        golf: "Golf",
+        kampsport: "Kampsport",
+        "amerikansk-fotboll": "Amerikansk fotboll",
+        cykling: "Cykling",
+        friidrott: "Friidrott",
+        snooker: "Snooker"
+      };
+
+      const nowMs = Date.now();
+      for (const block of blocks) {
+        const products = block?._embedded?.["viaplay:products"] || [];
+        for (const p of products) {
+          if (!p || p.type !== "sport" || !p.publicPath) continue;
+          const plan = p.system?.availability?.planInfo;
+          if (plan?.isRental === true || plan?.isPurchase === true) continue;
+
+          const flags = Array.isArray(p.system?.flags) ? p.system.flags : [];
+          const startIso = p.epg?.streamStart || p.epg?.start || "";
+          const endIso = p.epg?.streamEnd || p.epg?.end || "";
+          const startMs = startIso ? Date.parse(startIso) : NaN;
+          const endMs = endIso ? Date.parse(endIso) : NaN;
+
+          const isLive = flags.includes("isLive") || (!Number.isNaN(startMs) && !Number.isNaN(endMs) && nowMs >= startMs && nowMs <= endMs);
+          const isUpcoming = !isLive && !Number.isNaN(startMs) && startMs > nowMs;
+          if (!isLive && !isUpcoming) continue;
+
+          const title = (p.content?.title || "").trim();
+          if (!title) continue;
+
+          const slugParts = String(p.publicPath).replace(/^\/+/, "").split("/");
+          const mappedSport = sportSlugMap[(slugParts[0] || "").toLowerCase()] || "";
+          const league = (p.content?.format?.title || "").trim();
+          const subtitle = [league, p.content?.originalTitle].filter(Boolean).join(" • ");
+
+          addEvent({
+            title,
+            subtitle,
+            sport: mappedSport,
+            league,
+            status: isLive ? "Live" : "Upcoming",
+            startTimeIso: startIso,
+            watchUrl: "https://viaplay.se/sport/" + String(p.publicPath).replace(/^\/+/, "")
+          });
+          found++;
+        }
+      }
+    } catch {}
+    return found > 0;
+  };
+
+  // 3. Disney+ Sport Hub (/sv-se/browse/page-1eaf1f02-deb4-48d0-b54f-cbf7a843e8f3) — stitchDocument "Live och kommande" + DOM
+  const scanDisneyPlus = () => {
+    let found = 0;
+    const extractText = (node) => {
+      if (!node) return "";
+      if (typeof node === "string") return node;
+      if (Array.isArray(node)) return node.map(extractText).join(" ");
+      if (typeof node === "object") return extractText(node.children || node.text || node.label || node.value || "");
+      return "";
+    };
+
+    try {
+      const nextEl = document.getElementById("__NEXT_DATA__");
+      if (nextEl?.textContent) {
+        const nd = JSON.parse(nextEl.textContent);
+        const stitch = nd?.props?.pageProps?.stitchDocument?.mainContent;
+        const walkSliders = (node, depth) => {
+          if (!node || typeof node !== "object" || depth > 12) return;
+          if (Array.isArray(node)) {
+            for (const x of node) walkSliders(x, depth + 1);
+            return;
+          }
+          if (node._type === "Slider") {
+            const sliderTitle = extractText(node.title).trim();
+            const isLiveOrUpcomingSlider = /live|kommande|upcoming|pågår/i.test(sliderTitle) &&
+                                           !/repris|dokumentär|berättelser|serier|filmer|feel-good/i.test(sliderTitle);
+            if (isLiveOrUpcomingSlider) {
+              const walkCards = (c, d2) => {
+                if (!c || typeof c !== "object" || d2 > 6) return;
+                if (Array.isArray(c)) { for (const x of c) walkCards(x, d2 + 1); return; }
+                if (c._type === "ImageCard" && c.title && c.url) {
+                  const badge = extractText(c.badgeText).trim();
+                  const isLive = /^(live|direkt|pågår|live now|sänds nu)\b/i.test(badge);
+                  addEvent({
+                    title: c.title,
+                    subtitle: [badge, sliderTitle].filter(Boolean).join(" • "),
+                    status: isLive ? "Live" : "Upcoming",
+                    watchUrl: c.url
+                  });
+                  found++;
+                  return;
+                }
+                for (const v of Object.values(c)) walkCards(v, d2 + 1);
+              };
+              walkCards(node.children, 0);
+            }
+            return;
+          }
+          for (const v of Object.values(node)) walkSliders(v, depth + 1);
+        };
+        walkSliders(stitch, 0);
+      }
+    } catch {}
+
+    // Live authenticated DOM fallback for Disney+ SPA ("Live och kommande" / "Live & Upcoming" shelf)
+    if (found === 0) {
+      const headings = Array.from(document.querySelectorAll('h2, h3, [role="heading"]'));
+      for (const h of headings) {
+        const hText = (h.innerText || "").trim();
+        if (!/live och kommande|live & upcoming|live now|pågår nu/i.test(hText) || /repris|dokumentär/i.test(hText)) continue;
+        let container = h.parentElement;
+        for (let step = 0; step < 4 && container && container.parentElement; step++) {
+          if (container.querySelectorAll('a[href*="/entity-"], a[href*="/video/"], a[href*="/play/"]').length > 0) break;
+          container = container.parentElement;
+        }
+        if (!container) continue;
+        const links = Array.from(container.querySelectorAll('a[href*="/entity-"], a[href*="/video/"], a[href*="/play/"]'));
+        for (const a of links) {
+          const title = (a.getAttribute("aria-label") || a.innerText || "").replace(/\s+/g, " ").trim();
+          const cardText = (a.innerText || "").trim();
+          const isLive = /\b(live|live now|direkt|pågår)\b/i.test(cardText) && !/\bkommer\b|\bupcoming\b/i.test(cardText);
+          addEvent({
+            title,
+            subtitle: [cardText, hText].filter(Boolean).join(" • "),
+            status: isLive ? "Live" : "Upcoming",
+            watchUrl: a.getAttribute("href") || ""
+          });
+          found++;
+        }
+      }
+    }
+    return found > 0;
+  };
+
+  // 4. TV4 Play Sport Tablå (/sport/tabla?d=YYYY-MM-DD) — dynamic schedule row parser
+  const scanTv4Play = () => {
+    let found = 0;
+    const params = new URLSearchParams(location.search);
+    const todayLocal = new Date();
+    const pad2 = (n) => String(n).padStart(2, "0");
+    const dateStr = params.get("d") || `${todayLocal.getFullYear()}-${pad2(todayLocal.getMonth() + 1)}-${pad2(todayLocal.getDate())}`;
+    const nowMs = Date.now();
+
+    const scope = document.querySelector("main") || document.body;
+    const links = Array.from(scope.querySelectorAll('a[href]'));
+    for (const a of links) {
+      const href = a.getAttribute("href") || "";
+      if (!href || /^\/?(sport(\/tabla)?|kanaler|alla-program|faq)?(\?.*)?$/i.test(href)) continue;
+      if (!/\/(video|program|sport|kanal)\//i.test(href)) continue;
+
+      let row = a;
+      for (let step = 0; step < 3 && row.parentElement; step++) {
+        const pLinks = row.parentElement.querySelectorAll('a[href]').length;
+        const pText = (row.parentElement.innerText || "").trim();
+        if (pLinks <= 2 && pText.length > 0 && pText.length < 360) {
+          row = row.parentElement;
+        } else {
+          break;
+        }
+      }
+      if (isLockedOrAddOnCard(row) || isLockedOrAddOnCard(a)) continue;
+
+      const text = (row.innerText || a.getAttribute("aria-label") || "").trim();
+      if (text.length < 4) continue;
+
+      const hasLive = /\b(live|direkt|pågår|sänds nu)\b/i.test(text) ||
+                      !!row.querySelector('[class*="live" i], [data-testid*="live" i], [aria-label*="live" i]');
+      const timeMatch = text.match(/\b(\d{1,2})[:.](\d{2})\b/);
+      let startTimeIso = "";
+      let isUpcoming = false;
+
+      if (timeMatch) {
+        const hh = pad2(Number(timeMatch[1]));
+        const mm = timeMatch[2];
+        startTimeIso = `${dateStr}T${hh}:${mm}:00`;
+        const parsedMs = Date.parse(startTimeIso);
+        if (!Number.isNaN(parsedMs)) {
+          // Skip matches that started >3.5h ago unless explicitly tagged Live
+          if (!hasLive && parsedMs < nowMs - 3.5 * 3600 * 1000) continue;
+          if (!hasLive && parsedMs >= nowMs - 15 * 60 * 1000) isUpcoming = true;
+        }
+      }
+
+      if (!hasLive && !isUpcoming && !/\bkommande\b|\bbörjar\b/i.test(text)) continue;
+
+      const lines = text
+        .split(/\r?\n/)
+        .map(l => l.trim())
+        .filter(l => l.length >= 2 && !/^(live|direkt|pågår|kommande|\d{1,2}[:.]\d{2})$/i.test(l));
+      if (lines.length === 0) continue;
+
+      const title = lines[0];
+      const subtitle = lines.slice(1, 4).join(" • ");
+      addEvent({
+        title,
+        subtitle,
+        status: hasLive ? "Live" : "Upcoming",
+        startTimeIso,
+        watchUrl: href
+      });
+      found++;
+    }
+    return found > 0;
+  };
+
+  // 5. Expressen Livesport (livesport.expressen.se/sv/live — StayLive React SPA)
+  const scanExpressen = () => {
+    let found = 0;
+    const appRoot = document.getElementById("app") || document.body;
+    const navExclusions = /^\/?(sv\/?)?(live|sports?|login|logga-in|search|packages?|account|konto|help|faq|about|clubs?|om)?\/?$/i;
+
+    const getSectionHint = (el) => {
+      let cur = el;
+      for (let step = 0; step < 6 && cur && cur !== appRoot; step++) {
+        const heading = cur.querySelector("h1, h2, h3");
+        if (heading && !el.contains(heading)) {
+          const hText = (heading.innerText || "").trim();
+          if (/repris|avslutad|tidigare|arkiv|senaste klipp/i.test(hText)) return "ended";
+          if (/live|pågår|sänds nu/i.test(hText)) return "live";
+          if (/kommande|schemalag|idag|imorgon|snart/i.test(hText)) return "upcoming";
+        }
+        cur = cur.parentElement;
+      }
+      return "";
+    };
+
+    const links = Array.from(appRoot.querySelectorAll('a[href]'));
+    for (const a of links) {
+      const href = a.getAttribute("href") || "";
+      if (!href || href === "#" || href.startsWith("javascript:")) continue;
+      const absHref = href.startsWith("http") ? href : (location.origin + (href.startsWith("/") ? href : "/" + href));
+      if (!/livesport\.expressen\.se|expressen\.se\/(tv|sport)/i.test(absHref)) continue;
+
+      try {
+        const pathOnly = new URL(absHref).pathname;
+        if (navExclusions.test(pathOnly)) continue;
+      } catch { continue; }
+
+      let card = a;
+      for (let step = 0; step < 3 && card.parentElement; step++) {
+        const pLinks = card.parentElement.querySelectorAll('a[href]').length;
+        const pText = (card.parentElement.innerText || "").trim();
+        if (pLinks <= 2 && pText.length > 0 && pText.length < 360) {
+          card = card.parentElement;
+        } else {
+          break;
+        }
+      }
+      if (isLockedOrAddOnCard(card) || isLockedOrAddOnCard(a)) continue;
+
+      const sectionHint = getSectionHint(card);
+      if (sectionHint === "ended") continue;
+
+      const rawText = (card.innerText || a.getAttribute("aria-label") || "").trim();
+      if (rawText.length < 4) continue;
+
+      const hasLive = /\b(live|direkt|pågår|sänds nu)\b/i.test(rawText) ||
+                      !!card.querySelector('[class*="live" i], [data-testid*="live" i]') ||
+                      sectionHint === "live";
+      const hasUpcoming = !hasLive && (
+        sectionHint === "upcoming" ||
+        /\b(kommande|idag|imorgon|\d{1,2}[:.]\d{2})\b/i.test(rawText)
+      );
+
+      if (!hasLive && !hasUpcoming) continue;
+
+      const lines = rawText
+        .split(/\r?\n/)
+        .map(l => l.trim())
+        .filter(l => l.length >= 2 && !/^(live|direkt|pågår|kommande)$/i.test(l));
+      if (lines.length === 0) continue;
+
+      addEvent({
+        title: lines[0],
+        subtitle: lines.slice(1, 4).join(" • "),
+        status: hasLive ? "Live" : "Upcoming",
+        watchUrl: absHref
+      });
+      found++;
+    }
+    return found > 0;
+  };
+
+  let dedicatedSucceeded = false;
+  if (SERVICE === "SvtPlay") dedicatedSucceeded = scanSvtPlay();
+  else if (SERVICE === "Viaplay") dedicatedSucceeded = scanViaplay();
+  else if (SERVICE === "DisneyPlus") dedicatedSucceeded = scanDisneyPlus();
+  else if (SERVICE === "Tv4Play") dedicatedSucceeded = scanTv4Play();
+  else if (SERVICE === "Expressen") dedicatedSucceeded = scanExpressen();
+
+  if (dedicatedSucceeded) {
+    return JSON.stringify(result);
+  }
+
+  // Strategy 1 (Fallback for Prime Video, Netflix, HBO Max, or if site schema changes): Structured JSON-LD SportsEvent / BroadcastEvent
   try {
     document.querySelectorAll('script[type="application/ld+json"]').forEach(script => {
       const parsed = JSON.parse(script.textContent || "null");

@@ -15,7 +15,7 @@
     <Copyright>Copyright 2026 S4m.dev (https://www.s4m.dev/)</Copyright>
     <PackageProjectUrl>https://www.s4m.dev/</PackageProjectUrl>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
-    <Version>1.0.1</Version>
+    <Version>1.0.2</Version>
     <GitHubRepository Condition="'$(GitHubRepository)' == ''">leumas05/MatchFlow-TV</GitHubRepository>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <AllowedReferenceRelatedFileExtensions>.none</AllowedReferenceRelatedFileExtensions>
