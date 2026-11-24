@@ -314,6 +314,7 @@ public partial class TvOverlayWindow : Window
                 "profile_picker" => "👤 Välj profil i bilden",
                 "login_required" => "🔒 Kräver inloggning",
                 "subscription_required" => "🔒 Kräver tilläggsprenumeration",
+                "upcoming_not_started" => "⏳ Sändningen har inte börjat än",
                 "rate_limited_or_challenge" => "🛡 Verifiering krävs i spelaren",
                 "ended" => "⏹ Sändningen slut",
                 _ => "⏳ Laddar ström..."
@@ -508,9 +509,19 @@ public partial class TvOverlayWindow : Window
             FontWeight = FontWeights.Bold,
             TextWrapping = TextWrapping.Wrap
         });
+        var upcomingTimeLabel = "Kommande";
+        if (item.Event.StartTime.HasValue)
+        {
+            var localStart = item.Event.StartTime.Value.ToLocalTime();
+            var sv = System.Globalization.CultureInfo.GetCultureInfo("sv-SE");
+            upcomingTimeLabel = localStart.Date == DateTime.Today
+                ? localStart.ToString("HH:mm", sv)
+                : localStart.ToString("ddd HH:mm", sv);
+        }
+
         info.Children.Add(new TextBlock
         {
-            Text = isLive ? $"Poäng {item.Score:N0} • {item.ScoreBreakdown}" : (item.Event.StartTime?.ToLocalTime().ToString("HH:mm") ?? "Kommande") + $" • {item.ScoreBreakdown}",
+            Text = isLive ? $"Poäng {item.Score:N0} • {item.ScoreBreakdown}" : $"{upcomingTimeLabel} • {item.ScoreBreakdown}",
             Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
             FontSize = 12,
             Margin = new Thickness(0, 3, 0, 0),

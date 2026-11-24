@@ -32,8 +32,10 @@ public static partial class SportsKnowledgeBase
 
     private static readonly LeagueRule[] LeagueRules =
     [
-        // Snooker (must precede generic "Championship" football rules)
+        // Snooker & Bandyallsvenskan (must precede generic Football rules)
         new("uk championship|world snooker|snooker|masters snooker", "Snooker", "Snooker"),
+        new("bandyallsvenskan|bandy.*allsvenskan|allsvenskan.*bandy", "Bandyallsvenskan", "Bandy"),
+        new("elitserien.*bandy|bandy.*elitserien", "Elitserien Bandy", "Bandy"),
 
         // Fotboll
         new("uefa champions league|champions league", "Champions League", "Fotboll"),
@@ -54,8 +56,8 @@ public static partial class SportsKnowledgeBase
         new("dfb-pokal|dfb pokal", "DFB-Pokal", "Fotboll"),
         new("efl championship|sky bet championship", "EFL Championship", "Fotboll"),
         new("nations league", "Nations League", "Fotboll"),
-        new("fotbolls-vm|fotbollsvm|world cup", "Fotbolls-VM", "Fotboll"),
-        new("fotbolls-em|fotbollsem|euro 202\\d", "Fotbolls-EM", "Fotboll"),
+        new("fotbolls-vm|fotbollsvm|fifa world cup", "Fotbolls-VM", "Fotboll"),
+        new("fotbolls-em|fotbollsem|uefa euro 202\\d", "Fotbolls-EM", "Fotboll"),
         new("women's super league|wsl", "WSL", "Fotboll"),
 
         // Ishockey

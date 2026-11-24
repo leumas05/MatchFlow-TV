@@ -160,7 +160,7 @@ public static class SiteAdapters
                   : "";
                 addEvent({
                   title,
-                  subtitle: [sub, item.durationFormatted, item.images?.wide?.description].filter(Boolean).slice(0, 2).join(" • "),
+                  subtitle: [sub, item.durationFormatted].filter(Boolean).join(" • "),
                   status: isLive ? "Live" : "Upcoming",
                   startTimeIso,
                   watchUrl: path
@@ -409,17 +409,28 @@ public static class SiteAdapters
   const scanExpressen = () => {
     let found = 0;
     const appRoot = document.getElementById("app") || document.body;
-    const navExclusions = /^\/?(sv\/?)?(live|sports?|login|logga-in|search|packages?|account|konto|help|faq|about|clubs?|om)?\/?$/i;
+    const navExclusions = /^\/?(sv\/?)?(live|sports?|login|logga-in|search|packages?|account|konto|help|faq|about|clubs?|om|schedule|tabla)?\/?$/i;
+
+    const pad2 = (n) => String(n).padStart(2, "0");
+    const formatDateOffset = (daysOffset) => {
+      const d = new Date();
+      d.setDate(d.getDate() + daysOffset);
+      return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+    };
+
+    const upcomingDateTokenRegex = /\b(imorgon|i morgon|idag|i dag|kommande|om \d+ (dag|dagar|tim|timmar|min)|mån|tis|ons|tor|fre|lör|sön|\d{1,2}\s+(jan|feb|mar|apr|maj|jun|jul|aug|sep|okt|nov|dec))\b/i;
+    const noiseLineRegex = /^(live|live nu|direkt|pågår|pågår nu|sänds nu|kommande|idag|i dag|imorgon|i morgon|ingår|\+allt|\d{1,2}[:.]\d{2}|(mån|tis|ons|tor|fre|lör|sön)\.?\s+\d{1,2}\s+\w+|\d{1,2}\s+(jan|feb|mar|apr|maj|jun|jul|aug|sep|okt|nov|dec)\w*)$/i;
 
     const getSectionHint = (el) => {
       let cur = el;
-      for (let step = 0; step < 6 && cur && cur !== appRoot; step++) {
-        const heading = cur.querySelector("h1, h2, h3");
+      for (let step = 0; step < 5 && cur && cur !== appRoot; step++) {
+        // Only check an immediate sibling/section heading, NOT the global page navbar ("Lokal livesport")
+        const heading = cur.querySelector(":scope > h1, :scope > h2, :scope > h3, :scope > div > h2, :scope > div > h3");
         if (heading && !el.contains(heading)) {
           const hText = (heading.innerText || "").trim();
-          if (/repris|avslutad|tidigare|arkiv|senaste klipp/i.test(hText)) return "ended";
-          if (/live|pågår|sänds nu/i.test(hText)) return "live";
-          if (/kommande|schemalag|idag|imorgon|snart/i.test(hText)) return "upcoming";
+          if (/repris|avslutad|tidigare|arkiv|senaste/i.test(hText)) return "ended";
+          if (/^(live nu|pågår nu|sänds nu|pågår live)$/i.test(hText)) return "live";
+          if (/kommande|schemalag|idag|imorgon|snart|nästa/i.test(hText)) return "upcoming";
         }
         cur = cur.parentElement;
       }
@@ -456,26 +467,41 @@ public static class SiteAdapters
       const rawText = (card.innerText || a.getAttribute("aria-label") || "").trim();
       if (rawText.length < 4) continue;
 
-      const hasLive = /\b(live|direkt|pågår|sänds nu)\b/i.test(rawText) ||
-                      !!card.querySelector('[class*="live" i], [data-testid*="live" i]') ||
-                      sectionHint === "live";
-      const hasUpcoming = !hasLive && (
-        sectionHint === "upcoming" ||
-        /\b(kommande|idag|imorgon|\d{1,2}[:.]\d{2})\b/i.test(rawText)
-      );
+      const rawLines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      // Explicit upcoming indicators ALWAYS prevent falsely tagging an event as Live
+      const hasExplicitUpcoming = upcomingDateTokenRegex.test(rawText) || sectionHint === "upcoming";
+      // StayLive uses "live" in generic CSS classes (staylive-*), so require a real standalone LIVE badge line
+      const hasStandaloneLiveBadge = rawLines.some(l => /^(●\s*)?(live|live nu|pågår|pågår nu|sänds nu|direkt)$/i.test(l));
 
-      if (!hasLive && !hasUpcoming) continue;
+      let startTimeIso = "";
+      const timeMatch = rawText.match(/\b(\d{1,2})[:.](\d{2})\b/);
+      if (timeMatch) {
+        const hh = pad2(Number(timeMatch[1]));
+        const mm = timeMatch[2];
+        const datePart = /\b(imorgon|i morgon)\b/i.test(rawText) ? formatDateOffset(1) : formatDateOffset(0);
+        startTimeIso = `${datePart}T${hh}:${mm}:00`;
+      }
 
-      const lines = rawText
-        .split(/\r?\n/)
-        .map(l => l.trim())
-        .filter(l => l.length >= 2 && !/^(live|direkt|pågår|kommande)$/i.test(l));
-      if (lines.length === 0) continue;
+      const startMs = startTimeIso ? Date.parse(startTimeIso) : NaN;
+      const isFutureTime = !Number.isNaN(startMs) && startMs > Date.now() + 5 * 60 * 1000;
+
+      const isLive = !hasExplicitUpcoming && !isFutureTime && (hasStandaloneLiveBadge || sectionHint === "live");
+      const isUpcoming = !isLive && (hasExplicitUpcoming || isFutureTime || Boolean(timeMatch));
+
+      if (!isLive && !isUpcoming) continue;
+
+      const contentLines = rawLines.filter(l => l.length >= 3 && !noiseLineRegex.test(l));
+      if (contentLines.length === 0) continue;
+
+      // Prefer a matchup line ("Team A - Team B") if present, otherwise first non-badge content line
+      const title = contentLines.find(l => /\s[-–—]\s|\svs\.?\s|\smot\s/i.test(l)) || contentLines[0];
+      const subtitle = contentLines.filter(l => l !== title).slice(0, 3).join(" • ");
 
       addEvent({
-        title: lines[0],
-        subtitle: lines.slice(1, 4).join(" • "),
-        status: hasLive ? "Live" : "Upcoming",
+        title,
+        subtitle,
+        status: isLive ? "Live" : "Upcoming",
+        startTimeIso,
         watchUrl: absHref
       });
       found++;
@@ -831,6 +857,15 @@ public static class SiteAdapters
       });
       if (hasPaywallCopy && !hasFreeWatchCta) {
         return "subscription_required";
+      }
+
+      // Detect upcoming countdown pages (e.g. Expressen "01 Dagar 03 Timmar 23 Minuter 05 Sekunder / i morgon")
+      const hasCountdown =
+        (/\bdagar\b[\s\S]{0,60}\btimmar\b[\s\S]{0,60}\bminuter\b/i.test(text) && /\bsekunder\b/i.test(text)) ||
+        (/\bdays\b[\s\S]{0,60}\bhours\b[\s\S]{0,60}\bminutes\b/i.test(text) && /\bseconds\b/i.test(text)) ||
+        /sändningen startar om|börjar om \d|starts in \d/i.test(text);
+      if (hasCountdown && !hasFreeWatchCta) {
+        return "upcoming_not_started";
       }
     }
 

@@ -17,6 +17,8 @@ public class SportsKnowledgeBaseTests
     [InlineData("Elitserien Bandy: Villa - Sandviken", "Elitserien Bandy", "Bandy")]
     [InlineData("Pang Junxu - Riley Powell UK Championship | Kval", "Snooker", "Snooker")]
     [InlineData("UEFA Youth League: Arsenal - Dortmund", "UEFA Youth League", "Fotboll")]
+    [InlineData("Skidskytte: Världscupen — Individuell start, herrar", "Skidskytte", "Vintersport")]
+    [InlineData("Bandyallsvenskan: Boltic - Kungälv", "Bandyallsvenskan", "Bandy")]
     public void Enrich_DetectsSportAndLeagueFromTitle(string title, string expectedLeague, string expectedSport)
     {
         var evt = new SportEvent

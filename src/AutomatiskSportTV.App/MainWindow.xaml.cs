@@ -509,6 +509,14 @@ public partial class MainWindow : Window
                     _orchestrator.SkipCurrent();
                     return;
                 }
+                else if (telemetry.PlaybackState == "upcoming_not_started")
+                {
+                    _watchdogNotice = $"⏳ Matchen på {_orchestrator.CurrentEvent.Event.ServiceName} har inte börjat än — byter match...";
+                    SyncOverlayState();
+                    _overlay?.ShowSection(TvOverlayWindow.OverlaySection.OsdOnly, _config.RankingProfile, autoHideOsd: true);
+                    _orchestrator.SkipCurrent();
+                    return;
+                }
                 else if (telemetry.PlaybackState == "stalled")
                 {
                     if ((DateTimeOffset.UtcNow - _lastChannelSwitchUtc).TotalSeconds >= 15)
