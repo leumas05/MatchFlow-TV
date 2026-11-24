@@ -83,6 +83,7 @@ public sealed class RankingProfile
             "Kampsport",
             "Amerikansk fotboll",
             "Cykling",
+            "Snooker",
             "Övrigt"
         ],
         MutedSports = [],

@@ -313,6 +313,7 @@ public partial class TvOverlayWindow : Window
                 "stalled" => "⚠ Strömmen frös — återhämtar...",
                 "profile_picker" => "👤 Välj profil i bilden",
                 "login_required" => "🔒 Kräver inloggning",
+                "subscription_required" => "🔒 Kräver tilläggsprenumeration",
                 "rate_limited_or_challenge" => "🛡 Verifiering krävs i spelaren",
                 "ended" => "⏹ Sändningen slut",
                 _ => "⏳ Laddar ström..."

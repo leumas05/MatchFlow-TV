@@ -501,6 +501,14 @@ public partial class MainWindow : Window
                         }
                     }
                 }
+                else if (telemetry.PlaybackState == "subscription_required")
+                {
+                    _watchdogNotice = $"🔒 Kräver tilläggsprenumeration på {_orchestrator.CurrentEvent.Event.ServiceName} — byter match...";
+                    SyncOverlayState();
+                    _overlay?.ShowSection(TvOverlayWindow.OverlaySection.OsdOnly, _config.RankingProfile, autoHideOsd: true);
+                    _orchestrator.SkipCurrent();
+                    return;
+                }
                 else if (telemetry.PlaybackState == "stalled")
                 {
                     if ((DateTimeOffset.UtcNow - _lastChannelSwitchUtc).TotalSeconds >= 15)

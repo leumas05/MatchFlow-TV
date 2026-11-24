@@ -26,15 +26,20 @@ public static partial class SportsKnowledgeBase
         "Kampsport",
         "Amerikansk fotboll",
         "Cykling",
+        "Snooker",
         "Övrigt"
     ];
 
     private static readonly LeagueRule[] LeagueRules =
     [
+        // Snooker (must precede generic "Championship" football rules)
+        new("uk championship|world snooker|snooker|masters snooker", "Snooker", "Snooker"),
+
         // Fotboll
         new("uefa champions league|champions league", "Champions League", "Fotboll"),
         new("uefa europa league|europa league", "Europa League", "Fotboll"),
         new("europa conference league|conference league", "Conference League", "Fotboll"),
+        new("uefa youth league|youth league", "UEFA Youth League", "Fotboll"),
         new("premier league", "Premier League", "Fotboll"),
         new("allsvenskan", "Allsvenskan", "Fotboll"),
         new("superettan", "Superettan", "Fotboll"),
@@ -47,7 +52,7 @@ public static partial class SportsKnowledgeBase
         new("ligue 1", "Ligue 1", "Fotboll"),
         new("copa del rey", "Copa del Rey", "Fotboll"),
         new("dfb-pokal|dfb pokal", "DFB-Pokal", "Fotboll"),
-        new("efl championship|championship", "Championship", "Fotboll"),
+        new("efl championship|sky bet championship", "EFL Championship", "Fotboll"),
         new("nations league", "Nations League", "Fotboll"),
         new("fotbolls-vm|fotbollsvm|world cup", "Fotbolls-VM", "Fotboll"),
         new("fotbolls-em|fotbollsem|euro 202\\d", "Fotbolls-EM", "Fotboll"),
@@ -150,7 +155,8 @@ public static partial class SportsKnowledgeBase
         ("golf", "Golf"),
         ("boxning|boxing|kampsport|ufc|mma|wrestling", "Kampsport"),
         ("amerikansk fotboll|american football|nfl", "Amerikansk fotboll"),
-        ("cykling|cycling|cykel", "Cykling")
+        ("cykling|cycling|cykel", "Cykling"),
+        ("snooker|biljard", "Snooker")
     ];
 
     private static readonly Dictionary<string, (string Sport, string? League)> TeamClues = new(StringComparer.OrdinalIgnoreCase)
