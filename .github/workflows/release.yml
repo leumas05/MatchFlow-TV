@@ -40,8 +40,8 @@ jobs:
             $projVer = ($csproj.Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1).Trim()
             $tag = "v$projVer"
 
-            $existing = gh release view "$tag" 2>$null
-            if ($LASTEXITCODE -eq 0) {
+            $existingTags = @(gh release list --limit 100 --json tagName --jq '.[].tagName')
+            if ($existingTags -contains $tag) {
               Write-Host "Release $tag finns redan — hoppar över release för denna commit. Öka <Version> i .csproj eller pusha en ny v*-tagg för att släppa en uppdatering."
               "should_release=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
               exit 0
@@ -54,6 +54,7 @@ jobs:
           "should_release=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "version=$cleanVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          exit 0
 
       - name: Setup .NET 10
         if: steps.version.outputs.should_release == 'true'
@@ -105,8 +106,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = "${{ steps.version.outputs.tag }}"
-          $notes = @"
-          ## MatchFlow TV ($tag) — Portable Windows x64
+          $notesTemplate = @'
+          ## MatchFlow TV (__TAG__) — Portable Windows x64
 
           ### Installation på 30 sekunder
           1. Ladda ner **MatchFlowTV-win-x64.zip** nedan.
@@ -117,9 +118,11 @@ jobs:
           Om du redan kör MatchFlow TV laddas och installeras denna uppdatering automatiskt i bakgrunden (verifierad med SHA-256) så fort ingen match spelas – med alla dina inloggningar och inställningar bevarade.
 
           > **Obs:** Vid första start kan Windows SmartScreen visa en varning för osignerade open source-appar — klicka på *Mer information → Kör ändå*.
-          "@
+          '@
+          $notes = $notesTemplate.Replace('__TAG__', $tag)
           gh release create "$tag" `
             dist/MatchFlowTV-win-x64.zip `
             dist/SHA256SUMS.txt `
+            --target "${{ github.sha }}" `
             --title "MatchFlow TV $tag" `
             --notes $notes
