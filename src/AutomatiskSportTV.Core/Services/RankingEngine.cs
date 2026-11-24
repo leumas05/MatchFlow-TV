@@ -35,6 +35,7 @@ public sealed class RankingEngine
 
         var ordered = results
             .OrderBy(r => r.IsBlockedOrMuted)
+            .ThenBy(r => r.IsSkipped)
             .ThenByDescending(r => r.Score)
             .ThenBy(r => r.Event.StartTime ?? DateTimeOffset.MaxValue)
             .ThenBy(r => r.Event.Title, StringComparer.OrdinalIgnoreCase)
@@ -53,18 +54,7 @@ public sealed class RankingEngine
         var searchable = $"{evt.Title} {evt.RawSubtitle} {evt.League} {evt.Sport} {evt.ServiceName} {string.Join(' ', evt.Teams)}";
         var reasons = new List<string>();
         var blocked = false;
-
-        if (skippedEventIds is not null && skippedEventIds.Contains(evt.Id))
-        {
-            return new RankedSportEvent
-            {
-                Event = evt,
-                Score = -100_000,
-                IsBlockedOrMuted = true,
-                ScoreBreakdown = "Överhoppad i denna session",
-                MatchedReasons = ["Överhoppad"]
-            };
-        }
+        var isSkipped = skippedEventIds is not null && skippedEventIds.Contains(evt.Id);
 
         if (profile.MutedSports.Any(s => s.Equals(evt.Sport, StringComparison.OrdinalIgnoreCase)))
         {
@@ -207,6 +197,7 @@ public sealed class RankingEngine
             Event = evt,
             Score = score,
             IsBlockedOrMuted = false,
+            IsSkipped = isSkipped,
             ScoreBreakdown = string.Join(" • ", reasons),
             MatchedReasons = reasons
         };

@@ -103,4 +103,60 @@ public class ChannelOrchestratorTests
             ["today-early", "today-ars", "today-como", "thu-swe", "no-time"],
             orchestrator.UpcomingEvents.Select(u => u.Event.Id).ToArray());
     }
+
+    [Fact]
+    public void SkipCurrent_KeepsMatchVisibleInLiveEventsAndSelectEventResumesIt()
+    {
+        var profile = RankingProfile.CreateDefault();
+        profile.FavoriteTeams = ["Arsenal"];
+
+        var orchestrator = new ChannelOrchestrator();
+        var events = new[]
+        {
+            new SportEvent { Id = "ars", ServiceId = StreamingServiceId.Viaplay, ServiceName = "Viaplay", Title = "Arsenal - Dortmund", Status = EventStatus.Live },
+            new SportEvent { Id = "shl", ServiceId = StreamingServiceId.Tv4Play, ServiceName = "TV4 Play", Title = "Luleå HF - Malmö Redhawks (SHL)", Status = EventStatus.Live }
+        };
+
+        orchestrator.UpdateCatalog(events, profile);
+        Assert.Equal("ars", orchestrator.CurrentEvent?.Event.Id);
+
+        orchestrator.SkipCurrent();
+        Assert.Equal("shl", orchestrator.CurrentEvent?.Event.Id);
+        // Skipped event MUST remain visible in LiveEvents (Sportguiden) marked IsSkipped=true
+        Assert.Equal(2, orchestrator.LiveEvents.Count);
+        var skippedEntry = Assert.Single(orchestrator.LiveEvents, e => e.Event.Id == "ars");
+        Assert.True(skippedEntry.IsSkipped);
+
+        // Selecting it manually in Sportguiden un-skips and plays it again
+        Assert.True(orchestrator.SelectEvent("ars"));
+        Assert.Equal("ars", orchestrator.CurrentEvent?.Event.Id);
+        Assert.False(orchestrator.LiveEvents.Single(e => e.Event.Id == "ars").IsSkipped);
+    }
+
+    [Fact]
+    public void GoToHome_PausesPlaybackUntilResumeLiveTvIsCalled()
+    {
+        var profile = RankingProfile.CreateDefault();
+        var orchestrator = new ChannelOrchestrator();
+        var events = new[]
+        {
+            new SportEvent { Id = "live1", ServiceId = StreamingServiceId.SvtPlay, ServiceName = "SVT Play", Title = "Fotboll: Allsvenskan", Status = EventStatus.Live }
+        };
+
+        orchestrator.UpdateCatalog(events, profile);
+        Assert.Equal("live1", orchestrator.CurrentEvent?.Event.Id);
+
+        orchestrator.GoToHome();
+        Assert.True(orchestrator.IsHomePaused);
+        Assert.Null(orchestrator.CurrentEvent);
+        Assert.Single(orchestrator.LiveEvents);
+
+        // Background scan while on Home screen must NOT hijack the user back to video
+        orchestrator.UpdateCatalog(events, profile);
+        Assert.Null(orchestrator.CurrentEvent);
+
+        orchestrator.ResumeLiveTv();
+        Assert.False(orchestrator.IsHomePaused);
+        Assert.Equal("live1", orchestrator.CurrentEvent?.Event.Id);
+    }
 }

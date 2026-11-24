@@ -106,6 +106,7 @@
                     <Button Content="⭐ Rangordning (R)" Style="{StaticResource TvButtonStyle}" Margin="0,0,8,6" Click="OpenRanking_Click" />
                     <Button Content="🔑 Tjänster (L)" Style="{StaticResource TvButtonStyle}" Margin="0,0,8,6" Click="OpenServices_Click" />
                     <Button Content="👁 Skanner (V)" Style="{StaticResource TvButtonStyle}" Margin="0,0,8,6" Click="OpenVisualScanner_Click" />
+                    <Button Content="🏠 Startsida" Style="{StaticResource TvButtonStyle}" Margin="0,0,8,6" Click="GoHome_Click" ToolTip="Gå tillbaka till startsidan (Home)" />
                     <Button x:Name="OsdUpdateButton" Visibility="Collapsed" Content="⬆ Uppdatera nu" Style="{StaticResource TvAccentButtonStyle}" Margin="0,0,8,6" Click="InstallUpdateNow_Click" />
                     <Button Content="⛶ Fullskärm (F11)" Style="{StaticResource TvButtonStyle}" Margin="0,0,8,6" Click="ToggleFullscreen_Click" />
                     <Button Content="?" Style="{StaticResource TvButtonStyle}" Width="44" Margin="0,0,0,6" Click="OpenHelp_Click" ToolTip="Snabbkommandon (F1)" />
@@ -131,6 +132,8 @@
 
                 <DockPanel Grid.Row="0" Margin="0,0,0,18">
                     <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                        <Button x:Name="GuideResetSkippedButton" Visibility="Collapsed" Content="↺ Återställ överhoppade" Style="{StaticResource TvButtonStyle}" Margin="0,0,10,0" Click="ResetSkipped_Click" />
+                        <Button Content="🏠 Startsida" Style="{StaticResource TvButtonStyle}" Margin="0,0,10,0" Click="GoHome_Click" />
                         <Button Content="👁 Visa skanner live (V)" Style="{StaticResource TvButtonStyle}" Margin="0,0,10,0" Click="OpenVisualScanner_Click" />
                         <Button x:Name="GuideScanNowButton" Content="⟳ Skanna alla tjänster nu" Style="{StaticResource TvAccentButtonStyle}" Margin="0,0,10,0" Click="ScanAllNow_Click" />
                         <Button Content="Stäng (Esc)" Style="{StaticResource TvButtonStyle}" Click="CloseModals_Click" />
@@ -384,6 +387,7 @@
 
                 <DockPanel Grid.Row="0" Margin="0,0,0,18">
                     <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                        <Button Content="🏠 Startsida" Style="{StaticResource TvButtonStyle}" Margin="0,0,10,0" Click="GoHome_Click" />
                         <Button Content="👁 Visa skanner live (V)" Style="{StaticResource TvButtonStyle}" Margin="0,0,10,0" Click="OpenVisualScanner_Click" />
                         <Button Content="⟳ Skanna alla nu" Style="{StaticResource TvAccentButtonStyle}" Margin="0,0,10,0" Click="ScanAllNow_Click" />
                         <Button Content="Stäng (Esc)" Style="{StaticResource TvButtonStyle}" Click="CloseModals_Click" />
@@ -498,9 +502,9 @@
 
                                 <DockPanel>
                                     <Border DockPanel.Dock="Left" Background="#1E293B" BorderBrush="#475569" BorderThickness="1" CornerRadius="6" Padding="8,4" Width="88" Margin="0,0,12,0">
-                                        <TextBlock Text="Z" Foreground="#F8FAFC" FontSize="12" FontWeight="Bold" HorizontalAlignment="Center" />
+                                        <TextBlock Text="Z  /  Home" Foreground="#F8FAFC" FontSize="12" FontWeight="Bold" HorizontalAlignment="Center" />
                                     </Border>
-                                    <TextBlock Text="Starta TV-skärmsläckare (← / → byter stil live)" Foreground="#CBD5E1" FontSize="13" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                    <TextBlock Text="Skärmsläckare (Z, ←/→ byter stil) • Startsida (Home)" Foreground="#CBD5E1" FontSize="13" VerticalAlignment="Center" TextWrapping="Wrap" />
                                 </DockPanel>
                             </StackPanel>
                         </Border>

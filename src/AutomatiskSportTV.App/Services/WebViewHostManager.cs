@@ -760,7 +760,7 @@ public sealed class WebViewHostManager : IAsyncDisposable
   window.addEventListener('keydown', (e) => {
     const tag = (document.activeElement?.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'textarea' || document.activeElement?.isContentEditable) return;
-    const hotkeys = ['g', 'r', 'l', 'v', 'n', 'b', 'p', 's', 'i', 'm', 't', 'z', 'F11', 'Escape', 'PageUp', 'PageDown'];
+    const hotkeys = ['g', 'r', 'l', 'v', 'n', 'b', 'p', 's', 'i', 'm', 't', 'z', 'Home', 'F11', 'Escape', 'PageUp', 'PageDown'];
     if (hotkeys.includes(e.key) || hotkeys.includes(e.key.toLowerCase())) {
       window.chrome?.webview?.postMessage(JSON.stringify({ __shortcutKey: e.key }));
     }

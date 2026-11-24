@@ -18,9 +18,11 @@ public sealed class ChannelOrchestrator
 {
     private readonly RankingEngine _rankingEngine;
     private readonly HashSet<string> _skippedEventIds = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _endedEventIds = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _declinedSwitchOfferIds = new(StringComparer.OrdinalIgnoreCase);
     private readonly Stack<string> _history = new();
     private bool _manualQuietOverride;
+    private bool _isHomePaused;
 
     public ChannelOrchestrator(RankingEngine? rankingEngine = null)
     {
@@ -33,6 +35,7 @@ public sealed class ChannelOrchestrator
     public string? PinnedEventId { get; private set; }
     public PendingSwitchOffer? PendingOffer { get; private set; }
     public bool IsCurrentPinned => CurrentEvent is not null && CurrentEvent.Event.Id == PinnedEventId;
+    public bool IsHomePaused => _isHomePaused;
 
     public event Action<RankedSportEvent?>? ActiveChannelChanged;
     public event Action<PendingSwitchOffer?>? PendingSwitchOfferChanged;
@@ -49,7 +52,9 @@ public sealed class ChannelOrchestrator
         }
 
         var ranked = _rankingEngine.Rank(allEvents, profile, _skippedEventIds);
-        LiveEvents = ranked.Where(r => r.Event.Status == EventStatus.Live && !r.IsBlockedOrMuted).ToList();
+        LiveEvents = ranked
+            .Where(r => r.Event.Status == EventStatus.Live && !r.IsBlockedOrMuted && !_endedEventIds.Contains(r.Event.Id))
+            .ToList();
         UpcomingEvents = ranked
             .Where(r => r.Event.Status == EventStatus.Upcoming && !r.IsBlockedOrMuted)
             .OrderBy(r => r.Event.StartTime.HasValue ? 0 : 1)
@@ -58,7 +63,7 @@ public sealed class ChannelOrchestrator
             .ThenBy(r => r.Event.Title, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        if (quietHoursActive && !_manualQuietOverride)
+        if (_isHomePaused || (quietHoursActive && !_manualQuietOverride))
         {
             if (CurrentEvent is not null)
             {
@@ -71,19 +76,21 @@ public sealed class ChannelOrchestrator
             return;
         }
 
+        var nextAuto = LiveEvents.FirstOrDefault(r => !r.IsSkipped);
+
         // Refresh CurrentEvent metadata/score if it is still in LiveEvents
         if (CurrentEvent is not null)
         {
             var updatedCurrent = LiveEvents.FirstOrDefault(r => r.Event.Id == CurrentEvent.Event.Id);
-            if (updatedCurrent is not null)
+            if (updatedCurrent is not null && !updatedCurrent.IsSkipped)
             {
                 CurrentEvent = updatedCurrent;
                 EvaluateHigherPriorityCandidate(profile);
             }
-            else if (LiveEvents.Count > 0)
+            else if (nextAuto is not null)
             {
-                // Current event dropped off live list -> advance to best available
-                SwitchToInternal(LiveEvents[0], recordHistory: false);
+                // Current event dropped off live list -> advance to best available non-skipped live match
+                SwitchToInternal(nextAuto, recordHistory: false);
             }
             else
             {
@@ -93,16 +100,59 @@ public sealed class ChannelOrchestrator
                 ActiveChannelChanged?.Invoke(null);
             }
         }
-        else if (LiveEvents.Count > 0)
+        else if (nextAuto is not null)
         {
-            SwitchToInternal(LiveEvents[0], recordHistory: false);
+            SwitchToInternal(nextAuto, recordHistory: false);
         }
 
         CatalogUpdated?.Invoke();
     }
 
     /// <summary>
-    /// Selects a specific event from the guide.
+    /// Pauses live TV playback cleanly and returns to the home/standby dashboard without clearing discovered matches.
+    /// </summary>
+    public void GoToHome()
+    {
+        _isHomePaused = true;
+        PinnedEventId = null;
+        ClearOffer();
+        if (CurrentEvent is not null)
+        {
+            CurrentEvent = null;
+            ActiveChannelChanged?.Invoke(null);
+        }
+        CatalogUpdated?.Invoke();
+    }
+
+    /// <summary>
+    /// Exits home/standby pause and resumes the highest-ranked live broadcast.
+    /// </summary>
+    public RankedSportEvent? ResumeLiveTv()
+    {
+        _isHomePaused = false;
+        _manualQuietOverride = true;
+
+        var target = LiveEvents.FirstOrDefault(r => !r.IsSkipped) ?? LiveEvents.FirstOrDefault();
+        if (target is null)
+        {
+            CatalogUpdated?.Invoke();
+            return null;
+        }
+
+        if (target.IsSkipped)
+        {
+            _skippedEventIds.Remove(target.Event.Id);
+            RebuildLiveEventsSkippedFlags();
+            target = LiveEvents.First(r => r.Event.Id == target.Event.Id);
+        }
+
+        SwitchToInternal(target, recordHistory: false);
+        CatalogUpdated?.Invoke();
+        return CurrentEvent;
+    }
+
+    /// <summary>
+    /// Selects a specific event from the guide (and automatically un-skips it if it was previously skipped).
     /// </summary>
     public bool SelectEvent(string eventId)
     {
@@ -112,9 +162,16 @@ public sealed class ChannelOrchestrator
             return false;
         }
 
+        _isHomePaused = false;
         _manualQuietOverride = true;
-        _skippedEventIds.Remove(eventId);
+        if (_skippedEventIds.Remove(eventId))
+        {
+            RebuildLiveEventsSkippedFlags();
+            match = LiveEvents.First(r => r.Event.Id == eventId);
+        }
+
         SwitchToInternal(match, recordHistory: true);
+        CatalogUpdated?.Invoke();
         return true;
     }
 
@@ -128,20 +185,27 @@ public sealed class ChannelOrchestrator
             return null;
         }
 
+        _isHomePaused = false;
+        var pool = LiveEvents.Where(r => !r.IsSkipped).ToList();
+        if (pool.Count == 0)
+        {
+            pool = [.. LiveEvents];
+        }
+
         if (CurrentEvent is null)
         {
-            SwitchToInternal(LiveEvents[0], recordHistory: false);
+            SwitchToInternal(pool[0], recordHistory: false);
             return CurrentEvent;
         }
 
-        var idx = FindCurrentIndex();
-        var nextIdx = idx < 0 ? 0 : (idx + 1) % LiveEvents.Count;
-        if (LiveEvents.Count == 1 && idx == 0)
+        var idx = pool.FindIndex(r => r.Event.Id == CurrentEvent.Event.Id);
+        var nextIdx = idx < 0 ? 0 : (idx + 1) % pool.Count;
+        if (pool.Count == 1 && idx == 0)
         {
             return CurrentEvent;
         }
 
-        SwitchToInternal(LiveEvents[nextIdx], recordHistory: true);
+        SwitchToInternal(pool[nextIdx], recordHistory: true);
         return CurrentEvent;
     }
 
@@ -150,6 +214,8 @@ public sealed class ChannelOrchestrator
     /// </summary>
     public RankedSportEvent? SwitchPrevious()
     {
+        _isHomePaused = false;
+
         while (_history.Count > 0)
         {
             var prevId = _history.Pop();
@@ -161,19 +227,25 @@ public sealed class ChannelOrchestrator
             }
         }
 
-        if (LiveEvents.Count <= 1)
+        var pool = LiveEvents.Where(r => !r.IsSkipped).ToList();
+        if (pool.Count == 0)
+        {
+            pool = [.. LiveEvents];
+        }
+
+        if (pool.Count <= 1)
         {
             return CurrentEvent;
         }
 
-        var idx = FindCurrentIndex();
-        var prevIdx = idx <= 0 ? LiveEvents.Count - 1 : idx - 1;
-        SwitchToInternal(LiveEvents[prevIdx], recordHistory: false);
+        var idx = CurrentEvent is null ? -1 : pool.FindIndex(r => r.Event.Id == CurrentEvent.Event.Id);
+        var prevIdx = idx <= 0 ? pool.Count - 1 : idx - 1;
+        SwitchToInternal(pool[prevIdx], recordHistory: false);
         return CurrentEvent;
     }
 
     /// <summary>
-    /// Skips the current broadcast for this session and switches to the next top candidate.
+    /// Skips the current broadcast from automatic playback while keeping it visible in the Sports Guide.
     /// </summary>
     public RankedSportEvent? SkipCurrent()
     {
@@ -189,10 +261,11 @@ public sealed class ChannelOrchestrator
             PinnedEventId = null;
         }
 
-        LiveEvents = LiveEvents.Where(r => r.Event.Id != skippedId).ToList();
-        if (LiveEvents.Count > 0)
+        RebuildLiveEventsSkippedFlags();
+        var next = LiveEvents.FirstOrDefault(r => !r.IsSkipped);
+        if (next is not null)
         {
-            SwitchToInternal(LiveEvents[0], recordHistory: false);
+            SwitchToInternal(next, recordHistory: false);
         }
         else
         {
@@ -234,16 +307,17 @@ public sealed class ChannelOrchestrator
         }
 
         var endedId = CurrentEvent.Event.Id;
-        _skippedEventIds.Add(endedId);
+        _endedEventIds.Add(endedId);
         if (PinnedEventId == endedId)
         {
             PinnedEventId = null;
         }
 
         LiveEvents = LiveEvents.Where(r => r.Event.Id != endedId).ToList();
-        if (LiveEvents.Count > 0)
+        var next = LiveEvents.FirstOrDefault(r => !r.IsSkipped);
+        if (next is not null)
         {
-            SwitchToInternal(LiveEvents[0], recordHistory: false);
+            SwitchToInternal(next, recordHistory: false);
         }
         else
         {
@@ -281,6 +355,27 @@ public sealed class ChannelOrchestrator
     {
         _skippedEventIds.Clear();
         _declinedSwitchOfferIds.Clear();
+        RebuildLiveEventsSkippedFlags();
+        CatalogUpdated?.Invoke();
+    }
+
+    private void RebuildLiveEventsSkippedFlags()
+    {
+        LiveEvents = LiveEvents
+            .Select(r => new RankedSportEvent
+            {
+                Event = r.Event,
+                Score = r.Score,
+                IsBlockedOrMuted = r.IsBlockedOrMuted,
+                IsSkipped = _skippedEventIds.Contains(r.Event.Id),
+                ScoreBreakdown = r.ScoreBreakdown,
+                MatchedReasons = r.MatchedReasons
+            })
+            .OrderBy(r => r.IsSkipped)
+            .ThenByDescending(r => r.Score)
+            .ThenBy(r => r.Event.StartTime ?? DateTimeOffset.MaxValue)
+            .ThenBy(r => r.Event.Title, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private void EvaluateHigherPriorityCandidate(RankingProfile profile)
@@ -291,8 +386,8 @@ public sealed class ChannelOrchestrator
             return;
         }
 
-        var top = LiveEvents[0];
-        if (top.Event.Id == CurrentEvent.Event.Id || top.Score <= CurrentEvent.Score + 50)
+        var top = LiveEvents.FirstOrDefault(r => !r.IsSkipped);
+        if (top is null || top.Event.Id == CurrentEvent.Event.Id || top.Score <= CurrentEvent.Score + 50)
         {
             ClearOffer();
             return;

@@ -111,6 +111,7 @@
                                        TextWrapping="Wrap" />
 
                             <WrapPanel Margin="0,0,0,28">
+                                <Button x:Name="StandbyResumeLiveButton" Visibility="Collapsed" Content="▶ Tillbaka till live-TV" Style="{StaticResource TvAccentButtonStyle}" Margin="0,0,12,10" Click="StandbyResumeLive_Click" />
                                 <Button Content="📺 Sportguide (G)" Style="{StaticResource TvAccentButtonStyle}" Margin="0,0,12,10" Click="StandbyGuide_Click" />
                                 <Button Content="⭐ Rangordning (R)" Style="{StaticResource TvButtonStyle}" Margin="0,0,12,10" Click="StandbyRanking_Click" />
                                 <Button Content="🔑 Tjänster &amp; Inloggning (L)" Style="{StaticResource TvButtonStyle}" Margin="0,0,12,10" Click="StandbyServices_Click" />

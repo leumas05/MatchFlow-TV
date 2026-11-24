@@ -120,6 +120,7 @@ public partial class MainWindow : Window
         _overlay = new TvOverlayWindow { Owner = this };
         WireOverlayEvents(_overlay);
         SyncOverlayBounds();
+        SyncOverlayState();
         RenderStandbyDashboard();
 
         _lastCursorPos = DisplayPowerService.GetCursorPosition();
@@ -149,6 +150,8 @@ public partial class MainWindow : Window
         overlay.NextChannelRequested += () => { MarkUserActivity(); _orchestrator.SwitchNext(); };
         overlay.PrevChannelRequested += () => { MarkUserActivity(); _orchestrator.SwitchPrevious(); };
         overlay.SkipChannelRequested += () => { MarkUserActivity(); _orchestrator.SkipCurrent(); };
+        overlay.ResetSkippedRequested += () => { MarkUserActivity(); _orchestrator.ResetSkippedEvents(); RecomputeCatalog(); };
+        overlay.GoHomeRequested += () => { MarkUserActivity(); GoToHomeScreen(); };
         overlay.PinChannelRequested += () =>
         {
             MarkUserActivity();
@@ -1124,20 +1127,35 @@ public partial class MainWindow : Window
 
     private void RenderStandbyDashboard()
     {
+        var liveCount = _orchestrator.LiveEvents.Count;
+        if (liveCount > 0)
+        {
+            StandbyResumeLiveButton.Content = $"▶ Tillbaka till live-TV ({liveCount} pågående)";
+            StandbyResumeLiveButton.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            StandbyResumeLiveButton.Visibility = Visibility.Collapsed;
+        }
+
         if (IsQuietHoursNow())
         {
             StandbyHeadlineText.Text = $"🌙 Nattläge aktivt ({_config.RankingProfile.QuietHoursStart}–{_config.RankingProfile.QuietHoursEnd})";
         }
-        else if (_orchestrator.LiveEvents.Count == 0)
+        else if (liveCount == 0)
         {
             var needsLoginCount = _config.Services.Count(s => s.Enabled && s.AuthState == ServiceAuthState.LoginRequired);
             StandbyHeadlineText.Text = needsLoginCount > 0
                 ? $"Ingen live-sport hittad ännu — {needsLoginCount} tjänst(er) kräver inloggning"
                 : "Ingen pågående live-sport hittades just nu";
         }
+        else if (_orchestrator.IsHomePaused)
+        {
+            StandbyHeadlineText.Text = $"Startsidan — {liveCount} pågående sportsändningar redo";
+        }
         else
         {
-            StandbyHeadlineText.Text = $"{_orchestrator.LiveEvents.Count} pågående sportsändningar redo";
+            StandbyHeadlineText.Text = $"{liveCount} pågående sportsändningar redo";
         }
 
         StandbyServiceChips.Children.Clear();
@@ -1347,6 +1365,7 @@ public partial class MainWindow : Window
             Key.M or Key.VolumeMute => "m",
             Key.T => "t",
             Key.Z => "z",
+            Key.Home => "Home",
             Key.H or Key.F1 => "F1",
             Key.F11 => "F11",
             Key.Escape => "Escape",
@@ -1418,6 +1437,10 @@ public partial class MainWindow : Window
                 {
                     EnterScreensaverMode(allowOverPlayback: true);
                 }
+                return true;
+
+            case "home":
+                GoToHomeScreen();
                 return true;
 
             case "f1" or "h":
@@ -1577,6 +1600,7 @@ public partial class MainWindow : Window
 
         StandbyScanStatusText.Text = $"⬆ Uppdaterar MatchFlow TV till {_updateManager.StagedRelease!.TagName}...";
         _watchdogNotice = $"⬆ Uppdaterar till {_updateManager.StagedRelease!.TagName} och startar om...";
+        _store.Save(_config);
         SyncOverlayState();
         await Task.Delay(TimeSpan.FromSeconds(2));
 
@@ -1619,6 +1643,33 @@ public partial class MainWindow : Window
         {
             await _webViewManager.DisposeAsync();
         }
+    }
+
+    private void GoToHomeScreen()
+    {
+        ExitScreensaverMode();
+        if (_activeLoginService is not null)
+        {
+            _activeLoginService = null;
+            LoginTopBar.Visibility = Visibility.Collapsed;
+            _webViewManager?.ExitInteractiveLogin();
+        }
+        if (_isVisualScannerOpen)
+        {
+            CloseVisualScannerChromeOnly();
+        }
+        _overlay?.CloseAllPanels();
+        _orchestrator.GoToHome();
+        PlayerHostGrid.Visibility = Visibility.Collapsed;
+        StandbyView.Visibility = Visibility.Visible;
+        RenderStandbyDashboard();
+        SyncOverlayState();
+    }
+
+    private void StandbyResumeLive_Click(object sender, RoutedEventArgs e)
+    {
+        MarkUserActivity();
+        _orchestrator.ResumeLiveTv();
     }
 
     private void StandbyGuide_Click(object sender, RoutedEventArgs e) { MarkUserActivity(); _overlay?.ShowSection(TvOverlayWindow.OverlaySection.Guide, _config.RankingProfile); }

@@ -279,20 +279,92 @@ public static class SiteAdapters
 
     const nonLiveShelfRegex = /repris|dokumentär|berättelser|serier|filmer|feel-good|highlights|höjdpunkter|replay|movies|series|originals|extras|klipp|sammandrag|arkiv|recap/i;
     const liveShelfRegex = /live och kommande|live & upcoming|live nu|live now|live-sport|live på|pågår|kommande|live-evenemang|live events|direkt|sport|espn|uefa|europa league|conference league|champions league|laliga|nhl/i;
-    const disneyFutureOnlyRegex = /\b(kommer|kommande|upcoming|imorgon|i morgon|börjar om|startar om|nästa vecka)\b/i;
-    const disneyUpcomingTimeRegex = /\b(kommer|kommande|upcoming|idag|i dag|imorgon|i morgon|mån|tis|ons|tor|fre|lör|sön|\d{1,2}[:.]\d{2})\b/i;
-    const disneyLiveBadgeRegex = /\b(live nu|live now|direkt|pågår|sänds nu)\b|(^|[\s•|,\-–])live($|[\s•|,\-–])/i;
+    const disneyFutureOnlyRegex = /\b(kommer|kommande|upcoming|imorgon|i morgon|börjar om|startar om|nästa vecka)\b|\b\d{1,2}\/\d{1,2}\s*\|/i;
+    const disneyUpcomingTimeRegex = /\b(kommer|kommande|upcoming|idag|i dag|imorgon|i morgon|mån|tis|ons|tor|fre|lör|sön|\d{1,2}\/\d{1,2}|\d{1,2}[:.]\d{2})\b/i;
+    const disneyLiveBadgeRegex = /\b(live nu|live now|direkt|pågår|sänds nu|började för \d+|started \d+ min)/i;
+    const disneyStandaloneLiveRegex = /(^|[\s•|,\-–])live($|[\s•|,\-–])/i;
+
+    const swedishMonthMap = {
+      jan: 1, januari: 1, feb: 2, februari: 2, mar: 3, mars: 3, apr: 4, april: 4,
+      maj: 5, may: 5, jun: 6, juni: 6, jul: 7, juli: 7, aug: 8, augusti: 8,
+      sep: 9, sept: 9, september: 9, okt: 10, oct: 10, oktober: 10,
+      nov: 11, november: 11, dec: 12, december: 12
+    };
 
     const stripShelfPhrase = (str) =>
       String(str || "").replace(/live\s+(och|&)\s+(kommande|upcoming)|live[- ]?evenemang|live[- ]?sport/gi, " ");
 
     const parseStartIso = (str) => {
-      const timeMatch = String(str || "").match(/\b(\d{1,2})[:.](\d{2})\b/);
+      const s = String(str || "");
+      const timeMatch = s.match(/\b(\d{1,2})[:.](\d{2})\b/);
       if (!timeMatch) return "";
       const hh = pad2(Number(timeMatch[1]));
       const mm = timeMatch[2];
-      const datePart = /\b(imorgon|i morgon)\b/i.test(str) ? formatDateOffset(1) : formatDateOffset(0);
+      const now = new Date();
+      let datePart = "";
+
+      // 1) Explicit Swedish/English long date: "25 november 2026" or "26 nov"
+      const longDateMatch = s.match(/\b(\d{1,2})\s+(januari|februari|mars|april|maj|juni|juli|augusti|september|oktober|november|december|jan|feb|mar|apr|may|jun|jul|aug|sept?|okt|oct|nov|dec)\b(?:\s+(\d{4}))?/i);
+      if (longDateMatch) {
+        const day = Number(longDateMatch[1]);
+        const month = swedishMonthMap[longDateMatch[2].toLowerCase()];
+        const year = longDateMatch[3] ? Number(longDateMatch[3]) : now.getFullYear();
+        if (month && day >= 1 && day <= 31) {
+          datePart = `${year}-${pad2(month)}-${pad2(day)}`;
+        }
+      }
+
+      // 2) Explicit slash date: "25/11" or "26/11"
+      if (!datePart) {
+        const slashDateMatch = s.match(/\b(\d{1,2})\/(\d{1,2})\b/);
+        if (slashDateMatch) {
+          const day = Number(slashDateMatch[1]);
+          const month = Number(slashDateMatch[2]);
+          if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+            let year = now.getFullYear();
+            // Handle Dec -> Jan year rollover
+            if (now.getMonth() + 1 === 12 && month === 1) year++;
+            datePart = `${year}-${pad2(month)}-${pad2(day)}`;
+          }
+        }
+      }
+
+      // 3) Relative date ("imorgon" vs today)
+      if (!datePart) {
+        datePart = /\b(imorgon|i morgon)\b/i.test(s) ? formatDateOffset(1) : formatDateOffset(0);
+      }
+
       return `${datePart}T${hh}:${mm}:00`;
+    };
+
+    const cleanDisneyTitleAndContext = (rawTitle) => {
+      let t = String(rawTitle || "").replace(/\s+/g, " ").trim();
+      const extraContext = [];
+
+      // Strip leading status/date/time accessibility text from Disney+ aria-labels
+      t = t
+        .replace(/^(började för \d+\s+(minut|minuter|timme|timmar)\s+sedan|started \d+\s+(minute|minutes|hour|hours)\s+ago)\s*[.,:\-–|•]?\s*/i, "")
+        .replace(/^\d{1,2}\/\d{1,2}\s*\|\s*\d{1,2}[:.]\d{2}\s*/i, "")
+        .replace(/^\d{1,2}\s+(januari|februari|mars|april|maj|juni|juli|augusti|september|oktober|november|december|jan|feb|mar|apr|jun|jul|aug|sep|okt|nov|dec)\.?\s*(\d{4})?\s*[•·,\-–|]?\s*/i, "")
+        .replace(/^(\d{1,2}[:.]\d{2}\s*[-–—]\s*\d{1,2}[:.]\d{2}\s*)+/i, "")
+        .replace(/^\d{1,2}[:.]\d{2}\s*(\d{1,2}[:.]\d{2}\s*[-–—]\s*\d{1,2}[:.]\d{2})?\s*[•·,\-–|]?\s*/i, "")
+        .replace(/^(live now|live nu|live|kommer|kommande|upcoming|idag|i dag|imorgon|i morgon)\s*[.,:\-–|•]?\s*/i, "");
+
+      // Strip trailing screen-reader boilerplate ("Premiär 2026. Välj för mer information om denna titel.", "Choose Feed Entry")
+      t = t
+        .replace(/\s*(välj för mer information om denna titel\.?|choose feed entry\.?|select for more information.*|premiär\s*\d{4}\.?|new\s+in\s+\d{4}\.?)\s*/gi, " ")
+        .replace(/\s*[.,:\-–|•]?\s*(live now|live nu|live|kommer|kommande|upcoming)$/i, "")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      // Move trailing "ESPN <league/sport>" suffix into subtitle so match title stays crisp ("Kairat Almaty - Mjällby")
+      const espnIdx = t.search(/\s+ESPN\b/i);
+      if (espnIdx > 4) {
+        extraContext.push(t.slice(espnIdx).trim());
+        t = t.slice(0, espnIdx).trim();
+      }
+
+      return { title: t, extraContext: extraContext.join(" • ") };
     };
 
     // Pass A: Public / Next.js SSR stitchDocument ("Live och kommande" slider)
@@ -317,12 +389,13 @@ public static class SiteAdapters
                 if (c._type === "ImageCard" && c.title && c.url) {
                   const badge = extractText(c.badgeText).trim();
                   const cleanBadge = stripShelfPhrase(badge);
-                  const isLive = disneyLiveBadgeRegex.test(cleanBadge) && !disneyFutureOnlyRegex.test(cleanBadge);
+                  const isLive = (disneyLiveBadgeRegex.test(cleanBadge) || disneyStandaloneLiveRegex.test(cleanBadge)) && !disneyFutureOnlyRegex.test(cleanBadge);
+                  const cleaned = cleanDisneyTitleAndContext(c.title);
                   addEvent({
-                    title: c.title,
-                    subtitle: [badge, sliderTitle].filter(Boolean).join(" • "),
+                    title: cleaned.title || c.title,
+                    subtitle: [cleaned.extraContext, badge, sliderTitle].filter(Boolean).join(" • "),
                     status: isLive ? "Live" : "Upcoming",
-                    startTimeIso: isLive ? "" : parseStartIso(badge),
+                    startTimeIso: isLive ? "" : parseStartIso(badge + " " + c.title),
                     watchUrl: c.url
                   });
                   found++;
@@ -393,7 +466,11 @@ public static class SiteAdapters
         const hasUpcomingCue = disneyUpcomingTimeRegex.test(combined);
         const hasLiveDomBadge = !!card.querySelector?.('[data-testid*="live" i], [class*="live-badge" i], [class*="liveBadge" i], [aria-label*="live" i]');
         const hasStandaloneLiveLine = rawLines.some(l => /^(●\s*)?(live|live nu|live now|direkt|pågår|sänds nu)$/i.test(l));
-        const hasLiveBadge = (hasStandaloneLiveLine || hasLiveDomBadge || disneyLiveBadgeRegex.test(cleanedForLive)) && !hasFutureOnly;
+        const hasStartedAgoLive = /började för \d+\s+(minut|minuter|timme|timmar)\s+sedan|started \d+\s+(min|hour)/i.test(combined);
+        const startIsoCandidate = parseStartIso(combined);
+        const parsedStartMs = startIsoCandidate ? Date.parse(startIsoCandidate) : NaN;
+        const isFutureDateOrTime = !Number.isNaN(parsedStartMs) && parsedStartMs > Date.now() + 10 * 60 * 1000;
+        const hasLiveBadge = (hasStartedAgoLive || hasStandaloneLiveLine || hasLiveDomBadge || disneyLiveBadgeRegex.test(cleanedForLive) || disneyStandaloneLiveRegex.test(cleanedForLive)) && !hasFutureOnly && !isFutureDateOrTime;
 
         const isLiveOrUpcomingShelf = /live och kommande|live & upcoming|live nu|live now|live-sport|live på|pågår|kommande|live-evenemang|live events/i.test(shelfTitle || "");
         if (requireLiveOrUpcomingSignal && !hasLiveBadge && !hasUpcomingCue) return false;
@@ -403,18 +480,16 @@ public static class SiteAdapters
         const watchUrl = href || (hasLiveBadge ? (location.origin + location.pathname) : "");
         if (!watchUrl) return false;
 
-        const titleLine = rawLines.find(l => l.length >= 3 && !/^(live|live nu|live now|kommer|kommande|upcoming|idag|i dag|imorgon|i morgon|\d{1,2}[:.]\d{2}|ny|nytt|espn|sport)$/i.test(l)) || "";
-        let title = aria || imgAlt || titleLine || rawText;
-        title = title
-          .replace(/^(live now|live nu|live|kommer|kommande|upcoming)\s*[.,:\-–|•]?\s*/i, "")
-          .replace(/\s*[.,:\-–|•]?\s*(live now|live nu|live|kommer|kommande|upcoming)$/i, "")
-          .trim();
+        const titleLine = rawLines.find(l => l.length >= 3 && !/^(live|live nu|live now|kommer|kommande|upcoming|idag|i dag|imorgon|i morgon|\d{1,2}\/\d{1,2}\s*\|\s*\d{1,2}[:.]\d{2}|\d{1,2}[:.]\d{2}|ny|nytt|espn|sport)$/i.test(l)) || "";
+        const rawCandidate = aria || imgAlt || titleLine || rawText;
+        const cleaned = cleanDisneyTitleAndContext(rawCandidate);
+        const title = cleaned.title;
         if (!title || title.length < 3) return false;
 
-        const startIso = hasLiveBadge ? "" : parseStartIso(combined);
+        const startIso = hasLiveBadge ? "" : startIsoCandidate;
         addEvent({
           title,
-          subtitle: [rawText !== title ? rawText.slice(0, 140) : "", shelfTitle].filter(Boolean).slice(0, 2).join(" • "),
+          subtitle: [cleaned.extraContext, rawText !== title && rawText.length < 120 ? rawText : "", shelfTitle].filter(Boolean).slice(0, 2).join(" • "),
           status: hasLiveBadge ? "Live" : "Upcoming",
           startTimeIso: startIso,
           watchUrl

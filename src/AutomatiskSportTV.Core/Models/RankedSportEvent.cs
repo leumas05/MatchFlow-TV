@@ -8,6 +8,7 @@ public sealed class RankedSportEvent
     public required SportEvent Event { get; init; }
     public int Score { get; init; }
     public bool IsBlockedOrMuted { get; init; }
+    public bool IsSkipped { get; init; }
     public string ScoreBreakdown { get; init; } = string.Empty;
     public List<string> MatchedReasons { get; init; } = [];
 }

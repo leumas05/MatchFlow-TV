@@ -32,10 +32,13 @@ public static partial class SportsKnowledgeBase
 
     private static readonly LeagueRule[] LeagueRules =
     [
-        // Snooker & Bandyallsvenskan (must precede generic Football rules)
+        // Snooker, Bandy & US College/Pro Football (must precede generic Football rules)
         new("uk championship|world snooker|snooker|masters snooker", "Snooker", "Snooker"),
         new("bandyallsvenskan|bandy.*allsvenskan|allsvenskan.*bandy", "Bandyallsvenskan", "Bandy"),
         new("elitserien.*bandy|bandy.*elitserien", "Elitserien Bandy", "Bandy"),
+        new("ncaa.{0,12}football|college football", "NCAA Football", "Amerikansk fotboll"),
+        new("ncaa.{0,20}basketball", "NCAA Basketball", "Basket"),
+        new("ncaa.{0,20}volleyball", "NCAA Volleyball", "Övrigt"),
 
         // Fotboll
         new("uefa champions league|champions league", "Champions League", "Fotboll"),

@@ -21,10 +21,15 @@ public sealed class AppStateStore
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
+        PropertyNameCaseInsensitive = true,
+        AllowTrailingCommas = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
         Converters = { new JsonStringEnumConverter() }
     };
 
     private readonly string _configFilePath;
+    private readonly string _backupFilePath;
+    private readonly object _ioLock = new();
 
     public AppStateStore(string? configFilePath = null)
     {
@@ -37,45 +42,101 @@ public sealed class AppStateStore
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             _configFilePath = Path.Combine(appData, "AutomatiskSportTV", "config.json");
         }
+        _backupFilePath = $"{_configFilePath}.bak";
     }
 
     public string ConfigFilePath => _configFilePath;
 
     public AppConfigSnapshot Load()
     {
-        try
+        lock (_ioLock)
         {
             if (!File.Exists(_configFilePath))
             {
+                if (TryDeserializeFile(_backupFilePath, out var recoveredFromBackup))
+                {
+                    return recoveredFromBackup;
+                }
+
                 var defaults = new AppConfigSnapshot();
                 Save(defaults);
                 return defaults;
             }
 
-            var json = File.ReadAllText(_configFilePath);
-            var snapshot = JsonSerializer.Deserialize<AppConfigSnapshot>(json, JsonOptions) ?? new AppConfigSnapshot();
-            EnsureAllServicesPresent(snapshot);
-            EnsureDefaultSportsPresent(snapshot.RankingProfile);
-            return snapshot;
+            if (TryDeserializeFile(_configFilePath, out var snapshot))
+            {
+                return snapshot;
+            }
+
+            if (TryDeserializeFile(_backupFilePath, out var backupSnapshot))
+            {
+                return backupSnapshot;
+            }
+
+            return new AppConfigSnapshot();
+        }
+    }
+
+    private static bool TryDeserializeFile(string path, out AppConfigSnapshot snapshot)
+    {
+        try
+        {
+            if (!File.Exists(path))
+            {
+                snapshot = new AppConfigSnapshot();
+                return false;
+            }
+
+            var json = File.ReadAllText(path);
+            var parsed = JsonSerializer.Deserialize<AppConfigSnapshot>(json, JsonOptions);
+            if (parsed is null)
+            {
+                snapshot = new AppConfigSnapshot();
+                return false;
+            }
+
+            parsed.RankingProfile ??= RankingProfile.CreateDefault();
+            parsed.Services ??= ServiceConfig.CreateDefaults();
+            EnsureAllServicesPresent(parsed);
+            EnsureDefaultSportsPresent(parsed.RankingProfile);
+            snapshot = parsed;
+            return true;
         }
         catch
         {
-            return new AppConfigSnapshot();
+            snapshot = new AppConfigSnapshot();
+            return false;
         }
     }
 
     public void Save(AppConfigSnapshot snapshot)
     {
-        var directory = Path.GetDirectoryName(_configFilePath);
-        if (!string.IsNullOrEmpty(directory))
+        lock (_ioLock)
         {
-            Directory.CreateDirectory(directory);
-        }
+            var directory = Path.GetDirectoryName(_configFilePath);
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
 
-        var tempPath = $"{_configFilePath}.tmp";
-        var json = JsonSerializer.Serialize(snapshot, JsonOptions);
-        File.WriteAllText(tempPath, json);
-        File.Move(tempPath, _configFilePath, overwrite: true);
+            var tempPath = $"{_configFilePath}.{Environment.ProcessId}.tmp";
+            var json = JsonSerializer.Serialize(snapshot, JsonOptions);
+            File.WriteAllText(tempPath, json);
+
+            if (File.Exists(_configFilePath))
+            {
+                try
+                {
+                    File.Copy(_configFilePath, _backupFilePath, overwrite: true);
+                }
+                catch
+                {
+                    // Non-fatal if backup copy is briefly locked
+                }
+            }
+
+            File.Move(tempPath, _configFilePath, overwrite: true);
+        }
     }
 
     private static readonly Dictionary<StreamingServiceId, string[]> LegacyDefaultUrls = new()

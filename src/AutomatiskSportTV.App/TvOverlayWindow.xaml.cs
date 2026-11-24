@@ -25,6 +25,7 @@ public partial class TvOverlayWindow : Window
     private OverlaySection _activeSection = OverlaySection.None;
     private bool _pointerInsideOsd;
 
+    private RankingProfile _latestRanking = RankingProfile.CreateDefault();
     private RankingProfile _editingRanking = RankingProfile.CreateDefault();
     private List<ServiceConfig> _services = [];
     private IReadOnlyList<RankedSportEvent> _liveEvents = [];
@@ -73,6 +74,8 @@ public partial class TvOverlayWindow : Window
     public event Action? NextChannelRequested;
     public event Action? PrevChannelRequested;
     public event Action? SkipChannelRequested;
+    public event Action? ResetSkippedRequested;
+    public event Action? GoHomeRequested;
     public event Action? PinChannelRequested;
     public event Action? ToggleMuteRequested;
     public event Action? ToggleTheaterModeRequested;
@@ -110,6 +113,7 @@ public partial class TvOverlayWindow : Window
         _isTheaterMode = isTheaterMode;
         _liveEvents = liveEvents;
         _upcomingEvents = upcomingEvents;
+        _latestRanking = rankingProfile;
         _services = services;
         _pendingOffer = pendingOffer;
 
@@ -307,7 +311,7 @@ public partial class TvOverlayWindow : Window
         }
     }
 
-    public void CloseAllPanels() => ShowSection(OverlaySection.None, _editingRanking);
+    public void CloseAllPanels() => ShowSection(OverlaySection.None, _latestRanking);
 
     private void UpdateVisibility()
     {
@@ -396,7 +400,10 @@ public partial class TvOverlayWindow : Window
 
     private void RenderGuideLists(bool restoreFocus = false)
     {
-        GuideSummaryText.Text = $"{_liveEvents.Count} pågående matcher • {_upcomingEvents.Count} kommande  (Bläddra med Upp/Ner + Enter)";
+        var skippedCount = _liveEvents.Count(e => e.IsSkipped);
+        GuideResetSkippedButton.Visibility = skippedCount > 0 ? Visibility.Visible : Visibility.Collapsed;
+        var skippedSuffix = skippedCount > 0 ? $" ({skippedCount} överhoppade)" : "";
+        GuideSummaryText.Text = $"{_liveEvents.Count} pågående matcher{skippedSuffix} • {_upcomingEvents.Count} kommande  (Bläddra med Upp/Ner + Enter)";
         _guideFocusButtons.Clear();
 
         // Build sport filter pills
@@ -551,13 +558,14 @@ public partial class TvOverlayWindow : Window
     private Border BuildGuideCard(RankedSportEvent item, int rank, bool isLive)
     {
         var isPlaying = _currentEvent?.Event.Id == item.Event.Id;
+        var isSkipped = isLive && item.IsSkipped && !isPlaying;
         var svc = _services.FirstOrDefault(s => s.ServiceId == item.Event.ServiceId);
         var svcColor = TryParseColor(svc?.AccentColorHex, Color.FromRgb(56, 189, 248));
 
         var card = new Border
         {
-            Background = new SolidColorBrush(isPlaying ? Color.FromRgb(20, 83, 45) : Color.FromRgb(24, 34, 53)),
-            BorderBrush = new SolidColorBrush(isPlaying ? Color.FromRgb(34, 197, 94) : Color.FromRgb(41, 53, 72)),
+            Background = new SolidColorBrush(isPlaying ? Color.FromRgb(20, 83, 45) : isSkipped ? Color.FromRgb(18, 24, 38) : Color.FromRgb(24, 34, 53)),
+            BorderBrush = new SolidColorBrush(isPlaying ? Color.FromRgb(34, 197, 94) : isSkipped ? Color.FromRgb(71, 85, 105) : Color.FromRgb(41, 53, 72)),
             BorderThickness = new Thickness(isPlaying ? 2 : 1),
             CornerRadius = new CornerRadius(12),
             Padding = new Thickness(14),
@@ -610,6 +618,17 @@ public partial class TvOverlayWindow : Window
             Margin = new Thickness(0, 0, 8, 0),
             Child = new TextBlock { Text = item.Event.ServiceName, Foreground = Brushes.White, FontSize = 11, FontWeight = FontWeights.Bold }
         });
+        if (isSkipped)
+        {
+            topLine.Children.Add(new Border
+            {
+                Background = new SolidColorBrush(Color.FromRgb(51, 65, 85)),
+                CornerRadius = new CornerRadius(5),
+                Padding = new Thickness(7, 2, 7, 2),
+                Margin = new Thickness(0, 0, 8, 0),
+                Child = new TextBlock { Text = "⏭ ÖVERHOPPAD", Foreground = new SolidColorBrush(Color.FromRgb(251, 191, 36)), FontSize = 10, FontWeight = FontWeights.Bold }
+            });
+        }
         topLine.Children.Add(new TextBlock
         {
             Text = string.IsNullOrWhiteSpace(item.Event.League) ? item.Event.Sport : $"{item.Event.Sport} • {item.Event.League}",
@@ -1376,15 +1395,15 @@ public partial class TvOverlayWindow : Window
         switch (e.Key)
         {
             case Key.G:
-                ShowSection(_activeSection == OverlaySection.Guide ? OverlaySection.None : OverlaySection.Guide, _editingRanking);
+                ShowSection(_activeSection == OverlaySection.Guide ? OverlaySection.None : OverlaySection.Guide, _latestRanking);
                 e.Handled = true;
                 break;
             case Key.R:
-                ShowSection(_activeSection == OverlaySection.Ranking ? OverlaySection.None : OverlaySection.Ranking, _editingRanking);
+                ShowSection(_activeSection == OverlaySection.Ranking ? OverlaySection.None : OverlaySection.Ranking, _latestRanking);
                 e.Handled = true;
                 break;
             case Key.L:
-                ShowSection(_activeSection == OverlaySection.Services ? OverlaySection.None : OverlaySection.Services, _editingRanking);
+                ShowSection(_activeSection == OverlaySection.Services ? OverlaySection.None : OverlaySection.Services, _latestRanking);
                 e.Handled = true;
                 break;
             case Key.V:
@@ -1392,8 +1411,13 @@ public partial class TvOverlayWindow : Window
                 OpenVisualScannerRequested?.Invoke(null);
                 e.Handled = true;
                 break;
+            case Key.Home:
+                CloseAllPanels();
+                GoHomeRequested?.Invoke();
+                e.Handled = true;
+                break;
             case Key.F1 or Key.H:
-                ShowSection(_activeSection == OverlaySection.Help ? OverlaySection.None : OverlaySection.Help, _editingRanking);
+                ShowSection(_activeSection == OverlaySection.Help ? OverlaySection.None : OverlaySection.Help, _latestRanking);
                 e.Handled = true;
                 break;
             case Key.N or Key.PageUp:
@@ -1438,11 +1462,13 @@ public partial class TvOverlayWindow : Window
     private void PinChannel_Click(object sender, RoutedEventArgs e) => PinChannelRequested?.Invoke();
     private void ToggleMute_Click(object sender, RoutedEventArgs e) => ToggleMuteRequested?.Invoke();
     private void ToggleTheater_Click(object sender, RoutedEventArgs e) => ToggleTheaterModeRequested?.Invoke();
-    private void OpenGuide_Click(object sender, RoutedEventArgs e) => ShowSection(OverlaySection.Guide, _editingRanking);
-    private void OpenRanking_Click(object sender, RoutedEventArgs e) => ShowSection(OverlaySection.Ranking, _editingRanking);
-    private void OpenServices_Click(object sender, RoutedEventArgs e) => ShowSection(OverlaySection.Services, _editingRanking);
+    private void OpenGuide_Click(object sender, RoutedEventArgs e) => ShowSection(OverlaySection.Guide, _latestRanking);
+    private void OpenRanking_Click(object sender, RoutedEventArgs e) => ShowSection(OverlaySection.Ranking, _latestRanking);
+    private void OpenServices_Click(object sender, RoutedEventArgs e) => ShowSection(OverlaySection.Services, _latestRanking);
     private void OpenVisualScanner_Click(object sender, RoutedEventArgs e) { CloseAllPanels(); OpenVisualScannerRequested?.Invoke(null); }
-    private void OpenHelp_Click(object sender, RoutedEventArgs e) => ShowSection(OverlaySection.Help, _editingRanking);
+    private void GoHome_Click(object sender, RoutedEventArgs e) { CloseAllPanels(); GoHomeRequested?.Invoke(); }
+    private void ResetSkipped_Click(object sender, RoutedEventArgs e) => ResetSkippedRequested?.Invoke();
+    private void OpenHelp_Click(object sender, RoutedEventArgs e) => ShowSection(OverlaySection.Help, _latestRanking);
     private void ToggleFullscreen_Click(object sender, RoutedEventArgs e) => ToggleFullscreenRequested?.Invoke();
     private void CloseModals_Click(object sender, RoutedEventArgs e) => CloseAllPanels();
     private void ScanAllNow_Click(object sender, RoutedEventArgs e) => ScanAllRequested?.Invoke();
@@ -1548,6 +1574,13 @@ public partial class TvOverlayWindow : Window
 
     private void SaveRanking_Click(object sender, RoutedEventArgs e)
     {
+        if (!string.IsNullOrWhiteSpace(AddPenaltyTermBox.Text))
+        {
+            var pendingPts = int.TryParse((AddPenaltyPointsBox.Text ?? string.Empty).Replace(" ", ""), out var parsedPts) ? parsedPts : -1000;
+            AddPenaltyToEditor(AddPenaltyTermBox.Text, pendingPts);
+            AddPenaltyTermBox.Clear();
+        }
+
         if (int.TryParse(ScanIntervalBox.Text, out var scanSeconds))
         {
             _editingRanking.ScanIntervalSeconds = ScanPolicyManager.ClampScanInterval(scanSeconds);
@@ -1588,6 +1621,7 @@ public partial class TvOverlayWindow : Window
             ? repoCandidate
             : _editingRanking.UpdateRepository;
 
+        _latestRanking = _editingRanking;
         RankingSaved?.Invoke(_editingRanking);
         RankingStatusText.Text = "✓ Rangordning sparad och tillämpad!";
         CloseAllPanels();

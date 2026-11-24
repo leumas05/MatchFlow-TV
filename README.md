@@ -73,7 +73,8 @@
 | **`M` / `Mute`** | Ljud av/på |
 | **`T`** | Växla helbild (teaterläge) / sajtvy i spelaren |
 | **`I` / Rör musen** | Visa TV-infomenyn längst ned |
-| **`Z`** | Starta TV-skärmsläckaren manuellt (i standby) |
+| **`Z`** | Starta TV-skärmsläckaren (`←`/`→` byter stil live) |
+| **`Home`** | Gå tillbaka till startsidan (pausar live-TV) |
 | **`F11`** | Växla helskärmsläge |
 | **`Esc`** | Stäng aktiv meny / avbryt automatiskt byte |
 
