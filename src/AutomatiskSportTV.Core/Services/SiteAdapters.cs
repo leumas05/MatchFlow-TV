@@ -489,6 +489,66 @@ public static class SiteAdapters
     const dateStr = params.get("d") || `${todayLocal.getFullYear()}-${pad2(todayLocal.getMonth() + 1)}-${pad2(todayLocal.getDate())}`;
     const nowMs = Date.now();
 
+    const tv4NoiseRegex = /^(sport total|tv4 play\+?(\s*sport(\s*total)?)?|tv4 play|sport|plus|gratis|ingår|reklamfri|paket\s+.*|live|live nu|direkt|pågår|pågår nu|sänds nu|kommande|idag|i dag|imorgon|i morgon|ny|nytt|min lista|lägg till.*|sändningsstart.*|matchstart.*|nedsläpp.*|avspark.*|tv4(\s+sport(\s+live\s*\d+)?)?|tv4\s+(hockey|fotboll|motor|tennis|play)|tv12|sjuan|sportkanalen|\d{1,2}[:.]\d{2}(\s*[-–—]\s*\d{1,2}[:.]\d{2})?)$/i;
+    const tv4BareSportMap = {
+      ishockey: "Ishockey",
+      hockey: "Ishockey",
+      fotboll: "Fotboll",
+      handboll: "Handboll",
+      bandy: "Bandy",
+      innebandy: "Innebandy",
+      tennis: "Tennis",
+      basket: "Basket",
+      golf: "Golf",
+      motorsport: "Motorsport",
+      vintersport: "Vintersport",
+      skidskytte: "Vintersport",
+      alpint: "Vintersport",
+      "längdskidor": "Vintersport",
+      friidrott: "Friidrott",
+      cykling: "Cykling",
+      kampsport: "Kampsport",
+      snooker: "Snooker",
+      "amerikansk fotboll": "Amerikansk fotboll",
+      padel: "Övrigt",
+      trav: "Övrigt",
+      galopp: "Övrigt",
+      esport: "Övrigt",
+      "e-sport": "Övrigt"
+    };
+    const tv4BareLeagueRegex = /^(shl|sdhl|hockeyallsvenskan|hockeyettan|allsvenskan|superettan|damallsvenskan|la liga|laliga|serie a|ligue 1|champions league|uefa champions league|europa league|conference league|nfl|nba|nhl|atp|wta|wrc|formel 1|f1|ssl|sbl|handbollsligan|svenska cupen|v75|v86)$/i;
+    const matchupRegex = /\s[-–—]\s|\svs\.?\s|\smot\s/i;
+
+    const humanizeTv4Slug = (href) => {
+      try {
+        const path = new URL(href, location.origin).pathname;
+        const segments = path.split("/").filter(Boolean);
+        // TV4 video URLs look like /video/<hex-id>/<match-slug>
+        const slug = segments.length >= 3 && segments[0] === "video" ? segments[2] : (segments[segments.length - 1] || "");
+        if (!slug || /^[0-9a-f]{8,}$/i.test(slug) || /^(sport|tabla|video|program|kanal)$/i.test(slug)) return "";
+        const words = decodeURIComponent(slug)
+          .replace(/[-_]+/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+        if (words.length < 4 || tv4NoiseRegex.test(words) || Boolean(tv4BareSportMap[words.toLowerCase()])) return "";
+        return words.charAt(0).toUpperCase() + words.slice(1);
+      } catch {
+        return "";
+      }
+    };
+
+    const cleanAriaCandidate = (raw) => {
+      if (!raw) return "";
+      const cleaned = raw
+        .replace(/\b(paket\s+sport\s+total|paket\s+sport|sport\s+total|tv4\s+play\+?|tv4\s+sport\s+live\s*\d*|live\s+nu|direktsändning|kommande|idag|imorgon)\b/gi, " ")
+        .replace(/\b\d{1,2}[:.]\d{2}(\s*[-–—]\s*\d{1,2}[:.]\d{2})?\b/g, " ")
+        .replace(/^[\s•,|:\-–]+|[\s•,|:\-–]+$/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (!cleaned || cleaned.length < 3 || tv4NoiseRegex.test(cleaned) || Boolean(tv4BareSportMap[cleaned.toLowerCase()])) return "";
+      return cleaned;
+    };
+
     const scope = document.querySelector("main") || document.body;
     const links = Array.from(scope.querySelectorAll('a[href]'));
     for (const a of links) {
@@ -496,26 +556,36 @@ public static class SiteAdapters
       if (!href || /^\/?(sport(\/tabla)?|kanaler|alla-program|faq)?(\?.*)?$/i.test(href)) continue;
       if (!/\/(video|program|sport|kanal)\//i.test(href)) continue;
 
-      let row = a;
-      for (let step = 0; step < 3 && row.parentElement; step++) {
-        const pLinks = row.parentElement.querySelectorAll('a[href]').length;
-        const pText = (row.parentElement.innerText || "").trim();
-        if (pLinks <= 2 && pText.length > 0 && pText.length < 360) {
-          row = row.parentElement;
-        } else {
-          break;
+      let row = a.closest?.('li, article, [role="listitem"], [data-testid*="schedule" i], [data-testid*="card" i], [data-testid*="event" i]') || a;
+      if (row !== a) {
+        const rLinks = row.querySelectorAll('a[href]').length;
+        const rText = (row.innerText || "").trim();
+        if (rLinks > 4 || rText.length > 600) row = a;
+      }
+      if (row === a) {
+        for (let step = 0; step < 4 && row.parentElement; step++) {
+          const pLinks = row.parentElement.querySelectorAll('a[href]').length;
+          const pText = (row.parentElement.innerText || "").trim();
+          if (pLinks <= 3 && pText.length > 0 && pText.length < 500) {
+            row = row.parentElement;
+          } else {
+            break;
+          }
         }
       }
+
+      // If this row contains a direct /video/ link, skip secondary /program/ or /sport/ links inside the same row
+      if (!/\/video\//i.test(href) && row.querySelector('a[href*="/video/"]')) continue;
       if (isLockedOrAddOnCard(row) || isLockedOrAddOnCard(a)) continue;
 
       const text = (row.innerText || a.getAttribute("aria-label") || "").trim();
       if (text.length < 4) continue;
 
-      const hasLive = /\b(live|direkt|pågår|sänds nu)\b/i.test(text) ||
-                      !!row.querySelector('[class*="live" i], [data-testid*="live" i], [aria-label*="live" i]');
+      const rawLines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
       const timeMatch = text.match(/\b(\d{1,2})[:.](\d{2})\b/);
       let startTimeIso = "";
       let isUpcoming = false;
+      let isFutureStart = false;
 
       if (timeMatch) {
         const hh = pad2(Number(timeMatch[1]));
@@ -523,25 +593,80 @@ public static class SiteAdapters
         startTimeIso = `${dateStr}T${hh}:${mm}:00`;
         const parsedMs = Date.parse(startTimeIso);
         if (!Number.isNaN(parsedMs)) {
-          // Skip matches that started >3.5h ago unless explicitly tagged Live
-          if (!hasLive && parsedMs < nowMs - 3.5 * 3600 * 1000) continue;
-          if (!hasLive && parsedMs >= nowMs - 15 * 60 * 1000) isUpcoming = true;
+          isFutureStart = parsedMs > nowMs + 10 * 60 * 1000;
+          if (parsedMs >= nowMs - 15 * 60 * 1000) isUpcoming = true;
         }
       }
 
+      // Strip channel names like "TV4 Sport Live 1" before testing for an actual LIVE status badge
+      const textWithoutChannels = text.replace(/tv4\s+sport\s+live(\s*\d+)?/gi, " ");
+      const hasLiveBadgeLine = rawLines.some(l => /^(●\s*)?(live|live nu|direkt|pågår|pågår nu|sänds nu)$/i.test(l));
+      const hasLiveDomCue = !!row.querySelector('[data-testid*="live-badge" i], [class*="liveBadge" i], [class*="live-badge" i], [aria-label="Live" i]');
+      const hasLive = !isFutureStart && (hasLiveBadgeLine || hasLiveDomCue || /\b(live nu|direkt|pågår|sänds nu)\b/i.test(textWithoutChannels));
+
+      if (!hasLive && startTimeIso) {
+        const parsedMs = Date.parse(startTimeIso);
+        if (!Number.isNaN(parsedMs) && parsedMs < nowMs - 3.5 * 3600 * 1000) continue;
+      }
       if (!hasLive && !isUpcoming && !/\bkommande\b|\bbörjar\b/i.test(text)) continue;
 
-      const lines = text
-        .split(/\r?\n/)
-        .map(l => l.trim())
-        .filter(l => l.length >= 2 && !/^(live|direkt|pågår|kommande|\d{1,2}[:.]\d{2})$/i.test(l));
-      if (lines.length === 0) continue;
+      let detectedSport = "";
+      let detectedLeague = "";
+      const contentLines = [];
+      for (const line of rawLines) {
+        if (line.length < 2 || tv4NoiseRegex.test(line)) continue;
+        const lower = line.toLowerCase();
+        if (tv4BareSportMap[lower]) {
+          if (!detectedSport) detectedSport = tv4BareSportMap[lower];
+          continue;
+        }
+        if (tv4BareLeagueRegex.test(line) && !detectedLeague) {
+          detectedLeague = line;
+        }
+        contentLines.push(line);
+      }
 
-      const title = lines[0];
-      const subtitle = lines.slice(1, 4).join(" • ");
+      const headingCandidates = Array.from(row.querySelectorAll('h1, h2, h3, h4, [data-testid*="title" i], [class*="title" i]'))
+        .map(el => (el.innerText || "").replace(/\s+/g, " ").trim())
+        .filter(t => t.length >= 2 && !tv4NoiseRegex.test(t) && !tv4BareSportMap[t.toLowerCase()]);
+
+      const specificLines = contentLines.filter(l => !tv4BareLeagueRegex.test(l));
+      const specificHeadings = headingCandidates.filter(h => !tv4BareLeagueRegex.test(h));
+
+      const ariaCandidate = cleanAriaCandidate(a.getAttribute("aria-label") || a.getAttribute("title") || row.querySelector("img")?.getAttribute("alt") || "");
+      const slugCandidate = humanizeTv4Slug(href);
+
+      let title =
+        specificLines.find(l => matchupRegex.test(l)) ||
+        specificHeadings.find(h => matchupRegex.test(h)) ||
+        specificHeadings[0] ||
+        specificLines[0] ||
+        (ariaCandidate && !tv4BareLeagueRegex.test(ariaCandidate) ? ariaCandidate : "") ||
+        slugCandidate ||
+        (detectedLeague && detectedSport ? `${detectedLeague} (${detectedSport})` : (detectedLeague || detectedSport));
+
+      if (!title || title.length < 2 || tv4NoiseRegex.test(title)) continue;
+
+      // If title is a generic single word (like "Studio") and we know the league, prefix with league for clarity
+      if (detectedLeague && !title.toLowerCase().includes(detectedLeague.toLowerCase()) && /^(studio|försnack|uppsnack|magasin|sändning|direkt)$/i.test(title)) {
+        title = `${detectedLeague}: ${title}`;
+      }
+
+      const subtitleParts = [];
+      if (detectedLeague && !title.toLowerCase().includes(detectedLeague.toLowerCase())) {
+        subtitleParts.push(detectedLeague);
+      }
+      for (const l of contentLines) {
+        if (l !== title && l !== detectedLeague && !subtitleParts.includes(l)) {
+          subtitleParts.push(l);
+        }
+      }
+
       addEvent({
         title,
-        subtitle,
+        subtitle: subtitleParts.slice(0, 3).join(" • "),
+        sport: detectedSport,
+        league: detectedLeague,
         status: hasLive ? "Live" : "Upcoming",
         startTimeIso,
         watchUrl: href
@@ -814,7 +939,7 @@ public static class SiteAdapters
     const lines = rawText
       .split(/\r?\n/)
       .map(l => l.trim())
-      .filter(l => l.length >= 2 && !/^(live|direkt|pågår|ny|nytt|gratis|ingår|i dag|idag|i morgon|imorgon)$/i.test(l));
+      .filter(l => l.length >= 2 && !/^(live|direkt|pågår|ny|nytt|gratis|ingår|sport total|tv4 play\+?(\s*sport(\s*total)?)?|i dag|idag|i morgon|imorgon)$/i.test(l));
 
     if (lines.length === 0) continue;
 
