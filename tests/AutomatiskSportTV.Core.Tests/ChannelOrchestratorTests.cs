@@ -159,4 +159,113 @@ public class ChannelOrchestratorTests
         Assert.False(orchestrator.IsHomePaused);
         Assert.Equal("live1", orchestrator.CurrentEvent?.Event.Id);
     }
+
+    [Fact]
+    public void ReportMatchStatus_HalftimeOffers30sSwitchThenReturnsImmediatelyWhenPlayResumes()
+    {
+        var profile = RankingProfile.CreateDefault();
+        profile.FavoriteTeams = ["Arsenal"];
+        profile.EnableSmartBreakSwitching = true;
+        profile.BreakSwitchDelaySeconds = 30;
+
+        var orchestrator = new ChannelOrchestrator();
+        var events = new[]
+        {
+            new SportEvent { Id = "ars", ServiceId = StreamingServiceId.Viaplay, ServiceName = "Viaplay", Title = "Arsenal - Dortmund", League = "Champions League", Status = EventStatus.Live },
+            new SportEvent { Id = "city", ServiceId = StreamingServiceId.Viaplay, ServiceName = "Viaplay", Title = "Man City - Napoli", League = "Champions League", Status = EventStatus.Live }
+        };
+
+        orchestrator.UpdateCatalog(events, profile);
+        Assert.Equal("ars", orchestrator.CurrentEvent?.Event.Id);
+
+        // Halftime triggers a ~30s switch offer to Man City - Napoli
+        orchestrator.ReportMatchStatus("ars", new MatchLiveStatus
+        {
+            Phase = MatchPlayPhase.HalftimeOrBreak,
+            HomeScore = "2",
+            AwayScore = "1",
+            DetailText = "Halvtid",
+            Period = 1
+        }, profile);
+
+        Assert.NotNull(orchestrator.PendingOffer);
+        Assert.Equal(SwitchOfferKind.HalftimeOrBreak, orchestrator.PendingOffer!.Kind);
+        Assert.Equal("city", orchestrator.PendingOffer.Candidate.Event.Id);
+
+        // Accepting (or 30s countdown expiring) temporarily switches to city and tracks ars as PausedPrimaryEvent
+        orchestrator.AcceptPendingSwitch();
+        Assert.Equal("city", orchestrator.CurrentEvent?.Event.Id);
+        Assert.Equal("ars", orchestrator.PausedPrimaryEvent?.Event.Id);
+
+        // Second half starts on Arsenal -> immediately switches RIGHT BACK to Arsenal!
+        string? returnedId = null;
+        orchestrator.ReturnedFromBreak += (primary, _) => returnedId = primary.Event.Id;
+
+        orchestrator.ReportMatchStatus("ars", new MatchLiveStatus
+        {
+            Phase = MatchPlayPhase.InPlay,
+            HomeScore = "2",
+            AwayScore = "1",
+            ClockDisplay = "46'",
+            Period = 2
+        }, profile);
+
+        Assert.Equal("ars", orchestrator.CurrentEvent?.Event.Id);
+        Assert.Equal("ars", returnedId);
+        Assert.Null(orchestrator.PausedPrimaryEvent);
+    }
+
+    [Fact]
+    public void ReportMatchStatus_DismissingHalftimeOfferLetsUserStayForThatPeriod()
+    {
+        var profile = RankingProfile.CreateDefault();
+        profile.FavoriteTeams = ["Arsenal"];
+        profile.EnableSmartBreakSwitching = true;
+
+        var orchestrator = new ChannelOrchestrator();
+        var events = new[]
+        {
+            new SportEvent { Id = "ars", ServiceId = StreamingServiceId.Viaplay, ServiceName = "Viaplay", Title = "Arsenal - Dortmund", Status = EventStatus.Live },
+            new SportEvent { Id = "city", ServiceId = StreamingServiceId.Viaplay, ServiceName = "Viaplay", Title = "Man City - Napoli", Status = EventStatus.Live }
+        };
+
+        orchestrator.UpdateCatalog(events, profile);
+
+        var htStatus = new MatchLiveStatus { Phase = MatchPlayPhase.HalftimeOrBreak, DetailText = "Halvtid", Period = 1 };
+        orchestrator.ReportMatchStatus("ars", htStatus, profile);
+        Assert.NotNull(orchestrator.PendingOffer);
+
+        // User chooses "Stanna kvar"
+        orchestrator.DismissPendingSwitch();
+        Assert.Null(orchestrator.PendingOffer);
+        Assert.Equal("ars", orchestrator.CurrentEvent?.Event.Id);
+
+        // Subsequent poll during the same Period 1 break does NOT re-open the toast
+        orchestrator.ReportMatchStatus("ars", htStatus, profile);
+        Assert.Null(orchestrator.PendingOffer);
+    }
+
+    [Fact]
+    public void ReportMatchStatus_FinishedOffersSwitchAndDoesNotReturn()
+    {
+        var profile = RankingProfile.CreateDefault();
+        profile.FavoriteTeams = ["Arsenal"];
+        profile.EnableSmartBreakSwitching = true;
+
+        var orchestrator = new ChannelOrchestrator();
+        var events = new[]
+        {
+            new SportEvent { Id = "ars", ServiceId = StreamingServiceId.Viaplay, ServiceName = "Viaplay", Title = "Arsenal - Dortmund", Status = EventStatus.Live },
+            new SportEvent { Id = "city", ServiceId = StreamingServiceId.Viaplay, ServiceName = "Viaplay", Title = "Man City - Napoli", Status = EventStatus.Live }
+        };
+
+        orchestrator.UpdateCatalog(events, profile);
+
+        orchestrator.ReportMatchStatus("ars", new MatchLiveStatus { Phase = MatchPlayPhase.Finished, HomeScore = "3", AwayScore = "1", DetailText = "Slut", Period = 2 }, profile);
+        Assert.Equal(SwitchOfferKind.MatchFinished, orchestrator.PendingOffer?.Kind);
+
+        orchestrator.AcceptPendingSwitch();
+        Assert.Equal("city", orchestrator.CurrentEvent?.Event.Id);
+        Assert.Null(orchestrator.PausedPrimaryEvent);
+    }
 }

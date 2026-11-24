@@ -19,8 +19,10 @@ public partial class MainWindow : Window
     private readonly ChannelOrchestrator _orchestrator;
     private readonly ScanPolicyManager _scanPolicy = new();
     private readonly AppUpdateManager _updateManager = new();
+    private readonly LiveMatchStatusService _matchStatusService = new();
     private readonly Dictionary<StreamingServiceId, List<SportEvent>> _eventsByService = [];
     private readonly DispatcherTimer _scanTimer;
+    private readonly DispatcherTimer _matchStatusTimer;
     private readonly DispatcherTimer _cursorWatchTimer;
     private readonly DispatcherTimer _screensaverClockTimer;
     private readonly DispatcherTimer _screensaverDriftTimer;
@@ -68,6 +70,12 @@ public partial class MainWindow : Window
         _orchestrator = new ChannelOrchestrator();
         _orchestrator.ActiveChannelChanged += OnActiveChannelChanged;
         _orchestrator.PendingSwitchOfferChanged += _ => SyncOverlayState();
+        _orchestrator.ReturnedFromBreak += (primary, detail) =>
+        {
+            _watchdogNotice = $"⚽ Spelet igång igen — tillbaka till {primary.Event.Title}!";
+            SyncOverlayState();
+            _overlay?.ShowSection(TvOverlayWindow.OverlaySection.OsdOnly, _config.RankingProfile, autoHideOsd: true);
+        };
         _orchestrator.CatalogUpdated += OnCatalogUpdated;
 
         _scanTimer = new DispatcherTimer
@@ -75,6 +83,9 @@ public partial class MainWindow : Window
             Interval = TimeSpan.FromSeconds(ScanPolicyManager.ClampScanInterval(_config.RankingProfile.ScanIntervalSeconds))
         };
         _scanTimer.Tick += async (_, _) => await RunFullScanAsync(isManual: false);
+
+        _matchStatusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(20) };
+        _matchStatusTimer.Tick += async (_, _) => await PollLiveMatchStatusAsync();
 
         _cursorWatchTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(260) };
         _cursorWatchTimer.Tick += CursorWatchTimer_Tick;
@@ -129,6 +140,7 @@ public partial class MainWindow : Window
         _quietHoursTimer.Start();
         _updateCheckTimer.Start();
         _scanTimer.Start();
+        _matchStatusTimer.Start();
 
         _overlay.SyncUpdateStatus(_updateManager.CurrentVersion, _updateManager.StatusSummary, _updateManager.StagedRelease);
 
@@ -530,6 +542,58 @@ public partial class MainWindow : Window
 
         SyncOverlayState();
         _overlay?.ShowSection(TvOverlayWindow.OverlaySection.OsdOnly, _config.RankingProfile, autoHideOsd: true);
+        _ = PollLiveMatchStatusAsync();
+    }
+
+    private bool _isPollingMatchStatus;
+
+    private async Task PollLiveMatchStatusAsync()
+    {
+        if (_isPollingMatchStatus || _activeLoginService is not null || _isVisualScannerOpen)
+        {
+            return;
+        }
+
+        var current = _orchestrator.CurrentEvent;
+        var paused = _orchestrator.PausedPrimaryEvent;
+        if (current is null && paused is null)
+        {
+            return;
+        }
+
+        _isPollingMatchStatus = true;
+        try
+        {
+            if (paused is not null)
+            {
+                var pausedStatus = await _matchStatusService.FetchStatusAsync(paused.Event);
+                if (pausedStatus is not null)
+                {
+                    _orchestrator.ReportMatchStatus(paused.Event.Id, pausedStatus, _config.RankingProfile);
+                }
+            }
+
+            // Re-read CurrentEvent in case PausedPrimaryEvent just resumed and switched back
+            current = _orchestrator.CurrentEvent;
+            if (current is not null)
+            {
+                var status = await _matchStatusService.FetchStatusAsync(current.Event);
+                if (status is not null)
+                {
+                    _orchestrator.ReportMatchStatus(current.Event.Id, status, _config.RankingProfile);
+                }
+            }
+
+            SyncOverlayState();
+        }
+        catch
+        {
+            // Non-fatal if live scoreboard API is temporarily unreachable
+        }
+        finally
+        {
+            _isPollingMatchStatus = false;
+        }
     }
 
     private void OnCatalogUpdated()
@@ -1150,7 +1214,9 @@ public partial class MainWindow : Window
             _config.RankingProfile,
             _config.Services,
             _orchestrator.PendingOffer,
-            _watchdogNotice);
+            _watchdogNotice,
+            _orchestrator.GetMatchStatus(_orchestrator.CurrentEvent?.Event.Id),
+            _orchestrator.PausedPrimaryEvent);
     }
 
     private void RenderStandbyDashboard()
@@ -1657,6 +1723,7 @@ public partial class MainWindow : Window
     {
         NetworkChange.NetworkAvailabilityChanged -= OnNetworkAvailabilityChanged;
         _scanTimer.Stop();
+        _matchStatusTimer.Stop();
         _cursorWatchTimer.Stop();
         _screensaverClockTimer.Stop();
         _screensaverDriftTimer.Stop();

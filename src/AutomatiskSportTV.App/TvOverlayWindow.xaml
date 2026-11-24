@@ -16,13 +16,13 @@
                 Visibility="Collapsed"
                 MouseDown="ModalBackdrop_MouseDown" />
 
-        <!-- 1. Top-Right Smart Auto-Switch Countdown Toast -->
+        <!-- 1. Top-Right Smart Auto-Switch / Halftime / Full-Time Countdown Toast -->
         <Border x:Name="SwitchToastPanel"
                 Visibility="Collapsed"
                 HorizontalAlignment="Right"
                 VerticalAlignment="Top"
                 Margin="0,32,36,0"
-                Width="440"
+                Width="470"
                 Background="#EE111827"
                 BorderBrush="#22C55E"
                 BorderThickness="2"
@@ -30,8 +30,8 @@
                 Padding="20">
             <StackPanel>
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                    <Border Background="#16A34A" CornerRadius="6" Padding="8,3" Margin="0,0,10,0">
-                        <TextBlock Text="HÖGRE PRIORITERAD MATCH" Foreground="White" FontSize="11" FontWeight="Bold" />
+                    <Border x:Name="ToastBadgeBorder" Background="#16A34A" CornerRadius="6" Padding="8,3" Margin="0,0,10,0">
+                        <TextBlock x:Name="ToastBadgeText" Text="HÖGRE PRIORITERAD MATCH" Foreground="White" FontSize="11" FontWeight="Bold" />
                     </Border>
                     <TextBlock x:Name="ToastServiceText" Text="Viaplay" Foreground="#38BDF8" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" />
                 </StackPanel>
@@ -81,6 +81,12 @@
                             </Border>
                             <Border x:Name="OsdPinnedBadge" Visibility="Collapsed" Background="#D97706" CornerRadius="6" Padding="8,4" Margin="0,0,10,0">
                                 <TextBlock Text="📌 LÅST" Foreground="White" FontSize="12" FontWeight="Bold" />
+                            </Border>
+                            <Border x:Name="OsdLiveScoreBadge" Visibility="Collapsed" Background="#1E293B" BorderBrush="#38BDF8" BorderThickness="1" CornerRadius="6" Padding="8,3" Margin="0,0,10,0">
+                                <TextBlock x:Name="OsdLiveScoreText" Text="2–1 • 67'" Foreground="#E0F2FE" FontSize="12" FontWeight="Bold" />
+                            </Border>
+                            <Border x:Name="OsdBreakReturnBadge" Visibility="Collapsed" Background="#451A03" BorderBrush="#F59E0B" BorderThickness="1" CornerRadius="6" Padding="8,3" Margin="0,0,10,0">
+                                <TextBlock x:Name="OsdBreakReturnText" Text="⏳ Återgår vid spelstart" Foreground="#FDE68A" FontSize="11" FontWeight="SemiBold" />
                             </Border>
                             <TextBlock x:Name="OsdSportLeagueText" Text="Fotboll • Allsvenskan" Foreground="#38BDF8" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
                         </StackPanel>
@@ -355,7 +361,13 @@
                         <ScrollViewer VerticalScrollBarVisibility="Auto">
                             <StackPanel>
                                 <TextBlock Text="4. KANALBYTESREGLER" Foreground="#F8FAFC" FontSize="13" FontWeight="Bold" Margin="0,0,0,10" />
-                                <StackPanel x:Name="AutoSwitchModePanel" Margin="0,0,0,14" />
+                                <StackPanel x:Name="AutoSwitchModePanel" Margin="0,0,0,10" />
+
+                                <CheckBox x:Name="EnableSmartBreakSwitchingCheck" Content="Byt vid halvlek/paus &amp; slut (återgår vid spelstart)" Foreground="#F8FAFC" FontSize="13" Margin="0,0,0,6" />
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                    <TextBlock Text="Vänta före byte vid paus/slut (s):" Foreground="#94A3B8" FontSize="12" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                    <TextBox x:Name="BreakSwitchDelayBox" Width="62" Style="{StaticResource TvTextBoxStyle}" Padding="8,4" FontSize="13" />
+                                </StackPanel>
 
                                 <TextBlock Text="Skanningsintervall (sekunder)" Foreground="#94A3B8" FontSize="13" Margin="0,0,0,4" />
                                 <TextBox x:Name="ScanIntervalBox" Style="{StaticResource TvTextBoxStyle}" Margin="0,0,0,12" />

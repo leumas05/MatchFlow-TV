@@ -109,7 +109,9 @@ public partial class TvOverlayWindow : Window
         RankingProfile rankingProfile,
         List<ServiceConfig> services,
         PendingSwitchOffer? pendingOffer,
-        string? watchdogNotice = null)
+        string? watchdogNotice = null,
+        MatchLiveStatus? activeMatchStatus = null,
+        RankedSportEvent? pausedPrimaryEvent = null)
     {
         _currentEvent = currentEvent;
         _isMuted = isMuted;
@@ -120,7 +122,7 @@ public partial class TvOverlayWindow : Window
         _services = services;
         _pendingOffer = pendingOffer;
 
-        UpdateOsd(currentEvent, isPinned, telemetry, watchdogNotice);
+        UpdateOsd(currentEvent, isPinned, telemetry, watchdogNotice, activeMatchStatus, pausedPrimaryEvent);
         UpdateToast(pendingOffer);
 
         if (_activeSection == OverlaySection.Guide)
@@ -331,7 +333,13 @@ public partial class TvOverlayWindow : Window
         }
     }
 
-    private void UpdateOsd(RankedSportEvent? current, bool isPinned, PlaybackTelemetry? telemetry, string? watchdogNotice)
+    private void UpdateOsd(
+        RankedSportEvent? current,
+        bool isPinned,
+        PlaybackTelemetry? telemetry,
+        string? watchdogNotice,
+        MatchLiveStatus? activeMatchStatus,
+        RankedSportEvent? pausedPrimaryEvent)
     {
         var activeSvc = current is not null
             ? _services.FirstOrDefault(s => s.ServiceId == current.Event.ServiceId)
@@ -347,9 +355,38 @@ public partial class TvOverlayWindow : Window
             OsdSportLeagueText.Text = "Öppna Sportguide (G) eller Tjänster (L)";
             OsdScoreText.Text = "";
             OsdPinnedBadge.Visibility = Visibility.Collapsed;
+            OsdLiveScoreBadge.Visibility = Visibility.Collapsed;
+            OsdBreakReturnBadge.Visibility = Visibility.Collapsed;
             OsdPinButton.Content = "📌 Lås match (P)";
             OsdTelemetryText.Text = watchdogNotice ?? "Väntar på live-sport";
             return;
+        }
+
+        var scoreBadgeText = activeMatchStatus?.FormatBadgeText();
+        if (!string.IsNullOrWhiteSpace(scoreBadgeText))
+        {
+            var icon = activeMatchStatus!.Phase switch
+            {
+                MatchPlayPhase.HalftimeOrBreak => "☕ ",
+                MatchPlayPhase.Finished => "🏁 ",
+                _ => "⏱ "
+            };
+            OsdLiveScoreText.Text = icon + scoreBadgeText;
+            OsdLiveScoreBadge.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            OsdLiveScoreBadge.Visibility = Visibility.Collapsed;
+        }
+
+        if (pausedPrimaryEvent is not null && pausedPrimaryEvent.Event.Id != current.Event.Id)
+        {
+            OsdBreakReturnText.Text = $"⏳ Återgår vid spelstart: {pausedPrimaryEvent.Event.Title}";
+            OsdBreakReturnBadge.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            OsdBreakReturnBadge.Visibility = Visibility.Collapsed;
         }
 
         var svc = _services.FirstOrDefault(s => s.ServiceId == current.Event.ServiceId);
@@ -396,9 +433,24 @@ public partial class TvOverlayWindow : Window
             return;
         }
 
+        var accentHex = offer.Kind switch
+        {
+            SwitchOfferKind.HalftimeOrBreak => Color.FromRgb(217, 119, 6),
+            SwitchOfferKind.MatchFinished => Color.FromRgb(225, 29, 72),
+            _ => Color.FromRgb(22, 163, 74)
+        };
+        var borderHex = offer.Kind switch
+        {
+            SwitchOfferKind.HalftimeOrBreak => Color.FromRgb(245, 158, 11),
+            SwitchOfferKind.MatchFinished => Color.FromRgb(244, 63, 94),
+            _ => Color.FromRgb(34, 197, 94)
+        };
+        ToastBadgeBorder.Background = new SolidColorBrush(accentHex);
+        SwitchToastPanel.BorderBrush = new SolidColorBrush(borderHex);
+        ToastBadgeText.Text = string.IsNullOrWhiteSpace(offer.Headline) ? "HÖGRE PRIORITERAD MATCH" : offer.Headline;
         ToastServiceText.Text = offer.Candidate.Event.ServiceName;
         ToastTitleText.Text = offer.Candidate.Event.Title;
-        ToastReasonText.Text = offer.Candidate.ScoreBreakdown;
+        ToastReasonText.Text = string.IsNullOrWhiteSpace(offer.DetailText) ? offer.Candidate.ScoreBreakdown : offer.DetailText;
         var remaining = Math.Max(0, (int)Math.Ceiling((offer.ExpiresAtUtc - DateTimeOffset.UtcNow).TotalSeconds));
         ToastCountdownText.Text = $"Byter automatiskt om {remaining} s";
         SwitchToastPanel.Visibility = Visibility.Visible;
@@ -705,6 +757,8 @@ public partial class TvOverlayWindow : Window
             PenaltyRules = (source.PenaltyRules ?? []).Select(p => new PenaltyRule { Term = p.Term, PenaltyPoints = p.PenaltyPoints }).ToList(),
             AutoSwitchMode = source.AutoSwitchMode,
             AutoSwitchCountdownSeconds = source.AutoSwitchCountdownSeconds,
+            EnableSmartBreakSwitching = source.EnableSmartBreakSwitching,
+            BreakSwitchDelaySeconds = source.BreakSwitchDelaySeconds,
             ScanIntervalSeconds = source.ScanIntervalSeconds,
             StartFullscreen = source.StartFullscreen,
             PreventScreenSleep = source.PreventScreenSleep,
@@ -725,6 +779,8 @@ public partial class TvOverlayWindow : Window
         };
 
         ScanIntervalBox.Text = _editingRanking.ScanIntervalSeconds.ToString();
+        EnableSmartBreakSwitchingCheck.IsChecked = _editingRanking.EnableSmartBreakSwitching;
+        BreakSwitchDelayBox.Text = _editingRanking.BreakSwitchDelaySeconds.ToString();
         BlockedKeywordsBox.Text = string.Join(", ", _editingRanking.BlockedKeywords);
         PreventSleepCheck.IsChecked = _editingRanking.PreventScreenSleep;
         StartFullscreenCheck.IsChecked = _editingRanking.StartFullscreen;
@@ -1492,6 +1548,13 @@ public partial class TvOverlayWindow : Window
     // Event handlers
     private void Overlay_KeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Enter && _pendingOffer is not null && _activeSection == OverlaySection.None)
+        {
+            AcceptPendingSwitchRequested?.Invoke();
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key == Key.Escape)
         {
             if (_pendingOffer is not null && _activeSection == OverlaySection.None)
@@ -1781,6 +1844,12 @@ public partial class TvOverlayWindow : Window
         if (int.TryParse(ScanIntervalBox.Text, out var scanSeconds))
         {
             _editingRanking.ScanIntervalSeconds = ScanPolicyManager.ClampScanInterval(scanSeconds);
+        }
+
+        _editingRanking.EnableSmartBreakSwitching = EnableSmartBreakSwitchingCheck.IsChecked == true;
+        if (int.TryParse(BreakSwitchDelayBox.Text, out var breakDelay))
+        {
+            _editingRanking.BreakSwitchDelaySeconds = Math.Clamp(breakDelay, 5, 120);
         }
 
         _editingRanking.BlockedKeywords = (BlockedKeywordsBox.Text ?? string.Empty)

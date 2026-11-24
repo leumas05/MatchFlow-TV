@@ -48,6 +48,8 @@ public sealed class RankingProfile
 
     public AutoSwitchMode AutoSwitchMode { get; set; } = AutoSwitchMode.SmartToastWithCountdown;
     public int AutoSwitchCountdownSeconds { get; set; } = 15;
+    public bool EnableSmartBreakSwitching { get; set; } = true;
+    public int BreakSwitchDelaySeconds { get; set; } = 30;
     public int ScanIntervalSeconds { get; set; } = 300;
     public bool StartFullscreen { get; set; } = true;
     public bool PreventScreenSleep { get; set; } = true;
@@ -129,6 +131,8 @@ public sealed class RankingProfile
         ],
         AutoSwitchMode = AutoSwitchMode.SmartToastWithCountdown,
         AutoSwitchCountdownSeconds = 15,
+        EnableSmartBreakSwitching = true,
+        BreakSwitchDelaySeconds = 30,
         ScanIntervalSeconds = 300,
         StartFullscreen = true,
         PreventScreenSleep = true,
