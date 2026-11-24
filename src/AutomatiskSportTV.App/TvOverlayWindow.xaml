@@ -338,6 +338,7 @@
                                 </StackPanel>
 
                                 <TextBlock Text="SKÄRMSLÄCKARE (NÄR INGEN SPORT VISAS)" Foreground="#38BDF8" FontSize="12" FontWeight="Bold" Margin="0,0,0,8" />
+                                <StackPanel x:Name="ScreensaverStylePanel" Margin="0,0,0,8" />
                                 <CheckBox x:Name="EnableScreensaverCheck" Content="Aktivera TV-skärmsläckare i standby" Foreground="#F8FAFC" FontSize="14" Margin="0,0,0,6" />
                                 <CheckBox x:Name="ScreensaverPureBlackCheck" Content="Extra mörkt OLED-läge (bara svag klocka)" Foreground="#F8FAFC" FontSize="14" Margin="0,0,0,6" />
                                 <CheckBox x:Name="AllowDisplaySleepIdleCheck" Content="Tillåt Windows att släcka TV:n vid tomgång" Foreground="#F8FAFC" FontSize="14" Margin="0,0,0,8" />
@@ -499,7 +500,7 @@
                                     <Border DockPanel.Dock="Left" Background="#1E293B" BorderBrush="#475569" BorderThickness="1" CornerRadius="6" Padding="8,4" Width="88" Margin="0,0,12,0">
                                         <TextBlock Text="Z" Foreground="#F8FAFC" FontSize="12" FontWeight="Bold" HorizontalAlignment="Center" />
                                     </Border>
-                                    <TextBlock Text="Starta OLED-säker TV-skärmsläckare" Foreground="#CBD5E1" FontSize="13" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                    <TextBlock Text="Starta TV-skärmsläckare (← / → byter stil live)" Foreground="#CBD5E1" FontSize="13" VerticalAlignment="Center" TextWrapping="Wrap" />
                                 </DockPanel>
                             </StackPanel>
                         </Border>

@@ -686,6 +686,7 @@ public partial class TvOverlayWindow : Window
             DeduplicateSameMatch = source.DeduplicateSameMatch,
             StartWithWindows = source.StartWithWindows,
             EnableIdleScreensaver = source.EnableIdleScreensaver,
+            ScreensaverStyle = source.ScreensaverStyle,
             ScreensaverDelaySeconds = source.ScreensaverDelaySeconds,
             ScreensaverPureBlackMode = source.ScreensaverPureBlackMode,
             AllowDisplaySleepWhenNoSport = source.AllowDisplaySleepWhenNoSport,
@@ -726,7 +727,39 @@ public partial class TvOverlayWindow : Window
         RenderReorderableStrings(LeaguesListPanel, _editingRanking.FavoriteLeagues);
         RenderSportsOrder();
         RenderAutoSwitchModes();
+        RenderScreensaverStyles();
         RenderServicePriorities();
+    }
+
+    private void RenderScreensaverStyles()
+    {
+        ScreensaverStylePanel.Children.Clear();
+        var styles = new (ScreensaverStyle Style, string Label)[]
+        {
+            (ScreensaverStyle.SportBounce, "⚽ Sportstuds (DVD-logga + hörnträffar)"),
+            (ScreensaverStyle.StadiumBoard, "🏟️ Arenatavla (Strålkastare + nedräkning)"),
+            (ScreensaverStyle.Starfield, "✨ Stjärnplan (Rymd & svävande sportikoner)")
+        };
+
+        foreach (var (style, label) in styles)
+        {
+            var selected = _editingRanking.ScreensaverStyle == style;
+            var btn = new Button
+            {
+                Content = (selected ? "● " : "○ ") + label,
+                Style = (Style)FindResource(selected ? "TvAccentButtonStyle" : "TvButtonStyle"),
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                FontSize = 12,
+                Padding = new Thickness(10, 6, 10, 6),
+                Margin = new Thickness(0, 0, 0, 5)
+            };
+            btn.Click += (_, _) =>
+            {
+                _editingRanking.ScreensaverStyle = style;
+                RenderScreensaverStyles();
+            };
+            ScreensaverStylePanel.Children.Add(btn);
+        }
     }
 
     private void RenderPenaltiesList()

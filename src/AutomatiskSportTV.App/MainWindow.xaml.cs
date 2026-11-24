@@ -29,6 +29,7 @@ public partial class MainWindow : Window
     private readonly Random _rng = new();
 
     private WebViewHostManager? _webViewManager;
+    private ScreensaverAnimator? _screensaverAnimator;
     private TvOverlayWindow? _overlay;
     private CancellationTokenSource? _scanCts;
     private PlaybackTelemetry? _latestTelemetry;
@@ -36,6 +37,7 @@ public partial class MainWindow : Window
     private DateTimeOffset _lastUserActivityUtc = DateTimeOffset.UtcNow;
     private int _consecutiveEndedTelemetry;
     private int _stallReloadAttempts;
+    private int _screensaverTickCount;
     private StreamingServiceId? _activeLoginService;
     private StreamingServiceId? _visualScannerService;
     private string? _watchdogNotice;
@@ -111,6 +113,9 @@ public partial class MainWindow : Window
         _webViewManager.TelemetryReceived += OnPlayerTelemetryReceived;
         _webViewManager.ShortcutKeyForwarded += OnForwardedShortcutKey;
         _webViewManager.ScannerProgressChanged += OnScannerProgressChanged;
+
+        _screensaverAnimator = new ScreensaverAnimator(ScreensaverEffectsCanvas);
+        _screensaverAnimator.BounceStatsChanged += OnScreensaverBounceStatsChanged;
 
         _overlay = new TvOverlayWindow { Owner = this };
         WireOverlayEvents(_overlay);
@@ -816,27 +821,37 @@ public partial class MainWindow : Window
         }
     }
 
-    private void EnterScreensaverMode()
+    private static readonly string[] SportsLoungeFacts =
+    [
+        "💡 Visste du? Tryck ← eller → för att byta skärmsläckarstil live utan att väcka TV:n!",
+        "⚽ Rekord: Den snabbaste matchen i Allsvenskans historia hade mål efter bara 9 sekunder.",
+        "🏒 SHL-fakta: En slagskottspuck i toppklass når ofta över 160 km/h mot mål.",
+        "🏎️ Formel 1: Under ett pitstop byts alla fyra däck på under 2 sekunder.",
+        "📺 MatchFlow TV skannar dina tjänster i bakgrunden och startar automatiskt så fort en match går live.",
+        "⭐ Tips: Tryck R när du är vaken för att ge favoritlag pluspoäng eller studioprogram minuspoäng!",
+        "🎯 Väntar du på en hörnträff i Sportstuds-läget? Varje hörnträff firas med fyrverkeri!",
+        "👁️ Tips: Tryck V när som helst för att öppna den visuella live-skannern."
+    ];
+
+    private void EnterScreensaverMode(bool allowOverPlayback = false)
     {
-        if (_isScreensaverActive || _orchestrator.CurrentEvent is not null || _activeLoginService is not null || _isVisualScannerOpen)
+        if (_isScreensaverActive || (!allowOverPlayback && _orchestrator.CurrentEvent is not null) || _activeLoginService is not null || _isVisualScannerOpen)
         {
             return;
         }
 
         _isScreensaverActive = true;
+        _screensaverTickCount = 0;
         _overlay?.CloseAllPanels();
         StandbyView.Visibility = Visibility.Collapsed;
+        PlayerHostGrid.Visibility = Visibility.Collapsed;
         ScreensaverView.Visibility = Visibility.Visible;
 
-        var pureBlack = _config.RankingProfile.ScreensaverPureBlackMode;
-        ScreensaverInfoGroup.Visibility = pureBlack ? Visibility.Collapsed : Visibility.Visible;
-        ScreensaverDateText.Visibility = pureBlack ? Visibility.Collapsed : Visibility.Visible;
-        ScreensaverClockText.Foreground = new SolidColorBrush(pureBlack
-            ? Color.FromArgb(46, 255, 255, 255)
-            : Color.FromRgb(226, 232, 240));
-
+        ApplyScreensaverStyleVisuals();
         UpdateScreensaverContent();
         DriftScreensaverCard(immediate: true);
+
+        _screensaverAnimator?.Start(_config.RankingProfile.ScreensaverStyle, _config.RankingProfile.ScreensaverPureBlackMode);
         _screensaverClockTimer.Start();
         _screensaverDriftTimer.Start();
         UpdatePowerMode();
@@ -852,48 +867,207 @@ public partial class MainWindow : Window
         _isScreensaverActive = false;
         _screensaverClockTimer.Stop();
         _screensaverDriftTimer.Stop();
+        _screensaverAnimator?.Stop();
         ScreensaverView.Visibility = Visibility.Collapsed;
 
-        if (_orchestrator.CurrentEvent is null && _activeLoginService is null && !_isVisualScannerOpen)
+        if (_activeLoginService is null && !_isVisualScannerOpen)
         {
-            StandbyView.Visibility = Visibility.Visible;
+            if (_orchestrator.CurrentEvent is not null)
+            {
+                PlayerHostGrid.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                StandbyView.Visibility = Visibility.Visible;
+            }
         }
 
         MarkUserActivity();
         UpdatePowerMode();
     }
 
+    private void CycleScreensaverStyle(int delta)
+    {
+        if (!_isScreensaverActive || _config.RankingProfile.ScreensaverPureBlackMode)
+        {
+            return;
+        }
+
+        var styles = Enum.GetValues<ScreensaverStyle>();
+        var idx = Array.IndexOf(styles, _config.RankingProfile.ScreensaverStyle);
+        var next = styles[(idx + delta + styles.Length) % styles.Length];
+        _config.RankingProfile.ScreensaverStyle = next;
+        _store.Save(_config);
+
+        ApplyScreensaverStyleVisuals();
+        _screensaverAnimator?.SwitchStyle(next, pureBlackMode: false);
+        UpdateScreensaverContent();
+    }
+
+    private void ApplyScreensaverStyleVisuals()
+    {
+        var pureBlack = _config.RankingProfile.ScreensaverPureBlackMode;
+        var style = _config.RankingProfile.ScreensaverStyle;
+
+        ScreensaverHeaderRow.Visibility = pureBlack ? Visibility.Collapsed : Visibility.Visible;
+        ScreensaverSecondsText.Visibility = pureBlack ? Visibility.Collapsed : Visibility.Visible;
+        ScreensaverDateText.Visibility = pureBlack ? Visibility.Collapsed : Visibility.Visible;
+        ScreensaverInfoGroup.Visibility = pureBlack ? Visibility.Collapsed : Visibility.Visible;
+
+        if (pureBlack)
+        {
+            ScreensaverFloatingCard.Background = Brushes.Black;
+            ScreensaverFloatingCard.BorderBrush = Brushes.Transparent;
+            ScreensaverClockText.Foreground = new SolidColorBrush(Color.FromArgb(46, 255, 255, 255));
+            return;
+        }
+
+        ScreensaverFloatingCard.Background = new SolidColorBrush(Color.FromArgb(216, 7, 12, 23));
+        ScreensaverFloatingCard.BorderBrush = new SolidColorBrush(Color.FromRgb(30, 41, 59));
+        ScreensaverClockText.Foreground = new SolidColorBrush(Color.FromRgb(241, 245, 249));
+        ScreensaverSecondsText.Foreground = new SolidColorBrush(Color.FromRgb(56, 189, 248));
+
+        ScreensaverStyleLabel.Text = style switch
+        {
+            ScreensaverStyle.SportBounce => "⚽ SPORTSTUDS",
+            ScreensaverStyle.StadiumBoard => "🏟️ ARENATAVLA",
+            ScreensaverStyle.Starfield => "✨ STJÄRNPLAN",
+            _ => "⚽ SPORTSTUDS"
+        };
+
+        ScreensaverBounceBadge.Visibility = style == ScreensaverStyle.SportBounce ? Visibility.Visible : Visibility.Collapsed;
+        if (_screensaverAnimator is not null)
+        {
+            UpdateBounceBadgeText(_screensaverAnimator.BounceCount, _screensaverAnimator.CornerHits);
+        }
+    }
+
+    private void OnScreensaverBounceStatsChanged(int bounces, int cornerHits, Color accent)
+    {
+        if (!_isScreensaverActive || _config.RankingProfile.ScreensaverPureBlackMode)
+        {
+            return;
+        }
+
+        UpdateBounceBadgeText(bounces, cornerHits);
+        ScreensaverFloatingCard.BorderBrush = new SolidColorBrush(Color.FromArgb(135, accent.R, accent.G, accent.B));
+        ScreensaverSecondsText.Foreground = new SolidColorBrush(accent);
+    }
+
+    private void UpdateBounceBadgeText(int bounces, int cornerHits)
+    {
+        ScreensaverBounceStatsText.Text = cornerHits > 0
+            ? $"Studsar: {bounces}  •  🎯 Hörnträffar: {cornerHits}"
+            : $"Studsar: {bounces}";
+        ScreensaverBounceStatsText.Foreground = new SolidColorBrush(
+            cornerHits > 0 ? Color.FromRgb(250, 204, 21) : Color.FromRgb(148, 163, 184));
+    }
+
     private void UpdateScreensaverContent()
     {
+        _screensaverTickCount++;
         var svCulture = CultureInfo.GetCultureInfo("sv-SE");
         var now = DateTime.Now;
         ScreensaverClockText.Text = now.ToString("HH:mm", svCulture);
+        ScreensaverSecondsText.Text = now.ToString(":ss", svCulture);
         ScreensaverDateText.Text = now.ToString("dddd d MMMM", svCulture);
+        ScreensaverRadarDot.Opacity = (_screensaverTickCount % 2 == 0) ? 1.0 : 0.35;
+        ScreensaverLiveStatusLabel.Text = _isScanning ? "Skannar tjänster nu..." : "Skannar automatiskt";
 
         if (IsQuietHoursNow())
         {
-            ScreensaverNextMatchText.Text = $"🌙 Nattläge aktivt ({_config.RankingProfile.QuietHoursStart}–{_config.RankingProfile.QuietHoursEnd}) — ingen automatisk uppspelning.";
+            ScreensaverServiceBadge.Visibility = Visibility.Collapsed;
+            ScreensaverNextLabel.Text = "🌙 NATTLÄGE AKTIVT";
+            ScreensaverCountdownTimerText.Text = $"{_config.RankingProfile.QuietHoursStart}–{_config.RankingProfile.QuietHoursEnd}";
+            ScreensaverNextMatchText.Text = "Ingen automatisk uppspelning nattetid — tryck G för att välja manuellt.";
+            ScreensaverTickerText.Text = SportsLoungeFacts[(_screensaverTickCount / 10) % SportsLoungeFacts.Length];
             return;
         }
 
         var nextUpcoming = _orchestrator.UpcomingEvents.FirstOrDefault();
         if (nextUpcoming is not null)
         {
-            var timeText = FormatUpcomingDateTime(nextUpcoming.Event.StartTime, svCulture);
-            ScreensaverNextMatchText.Text = $"Nästa: {nextUpcoming.Event.Title} ({nextUpcoming.Event.ServiceName} • {timeText})";
+            var svc = _config.Services.FirstOrDefault(s => s.ServiceId == nextUpcoming.Event.ServiceId);
+            var badgeColor = TryParseAccentColor(svc?.AccentColorHex, Color.FromRgb(56, 189, 248));
+            ScreensaverServiceBadge.Background = new SolidColorBrush(badgeColor);
+            ScreensaverServiceBadgeText.Text = nextUpcoming.Event.ServiceName.ToUpperInvariant();
+            ScreensaverServiceBadge.Visibility = Visibility.Visible;
+
+            var sportLeague = string.IsNullOrWhiteSpace(nextUpcoming.Event.League)
+                ? nextUpcoming.Event.Sport
+                : $"{nextUpcoming.Event.Sport} • {nextUpcoming.Event.League}";
+            ScreensaverNextLabel.Text = $"NÄSTA MATCH  •  {sportLeague.ToUpperInvariant()}";
+            ScreensaverNextMatchText.Text = nextUpcoming.Event.Title;
+
+            if (nextUpcoming.Event.StartTime.HasValue)
+            {
+                var remaining = nextUpcoming.Event.StartTime.Value - DateTimeOffset.Now;
+                if (remaining.TotalSeconds <= 60)
+                {
+                    ScreensaverCountdownTimerText.Text = "⚡ Startar snart!";
+                }
+                else if (remaining.TotalHours >= 24)
+                {
+                    ScreensaverCountdownTimerText.Text = $"⏳ {(int)remaining.TotalDays} d {remaining.Hours:00}:{remaining.Minutes:00}:{remaining.Seconds:00}";
+                }
+                else
+                {
+                    ScreensaverCountdownTimerText.Text = $"⏳ {(int)remaining.TotalHours:00}:{remaining.Minutes:00}:{remaining.Seconds:00}";
+                }
+            }
+            else
+            {
+                ScreensaverCountdownTimerText.Text = "Kommande";
+            }
+
+            // Alternate every 9 seconds between upcoming schedule preview and fun sports facts
+            var showScheduleLine = _orchestrator.UpcomingEvents.Count > 1 && ((_screensaverTickCount / 9) % 2 == 0);
+            if (showScheduleLine)
+            {
+                var more = _orchestrator.UpcomingEvents
+                    .Skip(1)
+                    .Take(3)
+                    .Select(e =>
+                    {
+                        var t = e.Event.StartTime.HasValue ? $"{e.Event.StartTime.Value.ToLocalTime():HH:mm} " : "";
+                        return $"{t}{e.Event.Title}";
+                    });
+                ScreensaverTickerText.Text = "Senare: " + string.Join("   •   ", more);
+            }
+            else
+            {
+                ScreensaverTickerText.Text = SportsLoungeFacts[(_screensaverTickCount / 9) % SportsLoungeFacts.Length];
+            }
         }
         else
         {
+            ScreensaverServiceBadge.Visibility = Visibility.Collapsed;
+            ScreensaverNextLabel.Text = _isScanning ? "SKANNAR TJÄNSTER" : "VÄNTAR PÅ LIVESPORT";
+            ScreensaverCountdownTimerText.Text = "";
             ScreensaverNextMatchText.Text = _isScanning
-                ? "Skannar dina streamingtjänster efter livesport..."
+                ? "Letar efter pågående och kommande matcher..."
                 : "Inga planerade matcher hittade just nu — skannar automatiskt.";
+            ScreensaverTickerText.Text = SportsLoungeFacts[(_screensaverTickCount / 9) % SportsLoungeFacts.Length];
         }
+    }
+
+    private static Color TryParseAccentColor(string? hex, Color fallback)
+    {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(hex))
+            {
+                return (Color)ColorConverter.ConvertFromString(hex);
+            }
+        }
+        catch { }
+        return fallback;
     }
 
     private void DriftScreensaverCard(bool immediate = false)
     {
-        var maxX = Math.Max(120, ActualWidth - ScreensaverFloatingCard.Width - 80);
-        var maxY = Math.Max(100, ActualHeight - 280);
+        var maxX = Math.Max(140, ActualWidth - ScreensaverFloatingCard.Width - 80);
+        var maxY = Math.Max(120, ActualHeight - 380);
         var targetX = _rng.Next(60, (int)maxX);
         var targetY = _rng.Next(50, (int)maxY);
 
@@ -1116,6 +1290,19 @@ public partial class MainWindow : Window
 
         if (_isScreensaverActive)
         {
+            if (e.Key == Key.Right)
+            {
+                CycleScreensaverStyle(+1);
+                e.Handled = true;
+                return;
+            }
+            if (e.Key == Key.Left)
+            {
+                CycleScreensaverStyle(-1);
+                e.Handled = true;
+                return;
+            }
+
             ExitScreensaverMode();
             e.Handled = true;
             return;
@@ -1227,9 +1414,9 @@ public partial class MainWindow : Window
                 return true;
 
             case "z":
-                if (_orchestrator.CurrentEvent is null && _activeLoginService is null)
+                if (_activeLoginService is null && !_isVisualScannerOpen)
                 {
-                    EnterScreensaverMode();
+                    EnterScreensaverMode(allowOverPlayback: true);
                 }
                 return true;
 
@@ -1421,6 +1608,7 @@ public partial class MainWindow : Window
         _cursorWatchTimer.Stop();
         _screensaverClockTimer.Stop();
         _screensaverDriftTimer.Stop();
+        _screensaverAnimator?.Stop();
         _quietHoursTimer.Stop();
         _updateCheckTimer.Stop();
         _scanCts?.Cancel();

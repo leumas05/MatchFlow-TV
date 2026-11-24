@@ -50,7 +50,7 @@
 - **Riktig helbild i spelaren (`T`):** Sträcker aktiv videospelare kant-till-kant så att sajternas menyer och sidofält försvinner – med hårdvaru-DRM (PlayReady/Widevine) via Edge WebView2.
 - **Kontinuerlig sport-TV:** Byter automatiskt vidare när nuvarande sändning tar slut och visar diskret 15-sekunders notis om en högre prioriterad toppmatch drar igång.
 - **Watchdog & nätverksåterhämtning:** Laddar automatiskt om strömmen om bilden fryser i buffring eller om nätverket tappas tillfälligt – och byter vidare om strömmen inte svarar.
-- **OLED-säker TV-skärmsläckare (`Z`):** Aktiveras automatiskt när ingen livesport pågår, med mjukt rörlig klocka och kommande match – vaknar direkt till fullskärm så fort nästa match startar.
+- **OLED-säker animerad TV-skärmsläckare (`Z`):** 3 roliga stilar (byt live med `←`/`→` eller i `R`): **⚽ Sportstuds** (DVD-studsande neonlogga med skiftande sportikoner, gnistor och hörnträff-fyrverkeri!), **🏟️ Arenatavla** (strålkastare + levande sekundnedräkning till nästa match) och **✨ Stjärnplan** (stjärnhimmel & svävande sportikoner) – samt extra mörkt OLED-läge. Vaknar direkt till fullskärm så fort nästa match startar.
 - **Nattläge ("Tysta timmar"):** Stoppar automatisk uppspelning nattetid (t.ex. `23:30–07:00`) samtidigt som du fortfarande kan välja matcher manuellt i guiden.
 - **Volym per tjänst & autostart:** Balansera ljudnivån mellan t.ex. SVT Play, Viaplay och Expressen, snabbdämpa med `M` och välj autostart med Windows.
 - **Visuell live-skanner (`V`):** Se i realtid exakt vilken webbsida skannern laddar för varje tjänst (SVT Play, TV4 Play, Viaplay, Disney+, Expressen m.fl.), byt tjänst med ett klick och se extraktor, URL och sidstatus direkt på skärmen.

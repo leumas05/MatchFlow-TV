@@ -1,6 +1,16 @@
 namespace AutomatiskSportTV.Core.Models;
 
 /// <summary>
+/// Visual theme for the OLED-safe idle TV screensaver.
+/// </summary>
+public enum ScreensaverStyle
+{
+    SportBounce = 0,
+    StadiumBoard = 1,
+    Starfield = 2
+}
+
+/// <summary>
 /// A user-defined negative point adjustment applied when a broadcast matches a specific term
 /// (e.g. "studio", "kval", "Youth League", "damer", or a team/league/sport/service).
 /// </summary>
@@ -47,6 +57,7 @@ public sealed class RankingProfile
     public bool StartWithWindows { get; set; } = false;
 
     public bool EnableIdleScreensaver { get; set; } = true;
+    public ScreensaverStyle ScreensaverStyle { get; set; } = ScreensaverStyle.SportBounce;
     public int ScreensaverDelaySeconds { get; set; } = 45;
     public bool ScreensaverPureBlackMode { get; set; } = false;
     public bool AllowDisplaySleepWhenNoSport { get; set; } = false;
